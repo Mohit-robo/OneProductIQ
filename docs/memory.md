@@ -10,6 +10,12 @@
 - Initialized a Vite + React front‑end skeleton (`demo-app-client`).  
 - Set up basic manual test flow stored in memory for later recall.  
 - **Adjusted image preview to a fixed size (200×200 px, object‑fit:cover) so large thumbnails no longer overflow the UI.**  
+- **Prompt Management System implemented (2026-05-03):**
+  - Added `/prompts` GET endpoint to backend returning prompt titles and content from `/prompts` folder
+  - Added prompt selector dropdown to frontend UI with 3 templates: product_identification, physical_attributes, style_and_audience  
+  - Updated `/upload` to accept and use `prompt` body field in FastVLM message
+  - Added Vite proxy rule for `/prompts` route
+  - Image preview constrained to 128px height with `object-contain` to preserve aspect ratio
 
 ### Environment Setup
 - **Node version:** v18.19.1  
@@ -24,8 +30,6 @@
 - CORS may need to be enabled if the front‑end runs on a different port.  
 
 ### Next Steps
-1. Complete Vite + React app skeleton (`demo-app-client`).  
-2. Implement `ImageUpload` component that POSTs to `http://localhost:3000/upload`.  
-3. Display the returned `description` on the page.  
-4. Add minimal Tailwind styling for a clean UI.  
-5. Update `MEMORY.md` and `lessons.md` with outcomes.  
+1. Test prompt selection flow end-to-end in browser  
+2. Add more prompt templates as needed  
+3. Consider adding prompt preview/edit functionality  

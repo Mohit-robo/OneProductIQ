@@ -6,14 +6,33 @@ const App = () => {
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [prompts, setPrompts] = useState([]);
+  const [selectedPrompt, setSelectedPrompt] = useState("");
 
+  // Load prompts on mount
   useEffect(() => {
+    const fetchPrompts = async () => {
+      try {
+        const res = await fetch("/prompts");
+        if (res.ok) {
+          const data = await res.json();
+          setPrompts(data.prompts);
+          if (data.prompts.length > 0) {
+            setSelectedPrompt(data.prompts[0].content);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load prompts:", err);
+      }
+    };
+    fetchPrompts();
+    
     return () => {
       if (previewUrl) {
         URL.revokeObjectURL(previewUrl);
       }
     };
-  }, [previewUrl]);
+  }, []);
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -34,6 +53,9 @@ const App = () => {
 
     const formData = new FormData();
     formData.append("image", imageFile);
+    if (selectedPrompt) {
+      formData.append("prompt", selectedPrompt);
+    }
 
     try {
       const response = await fetch("/upload", {
@@ -77,6 +99,24 @@ const App = () => {
             className="mt-1 w-full p-2 border rounded"
           />
         </div>
+
+        {prompts.length > 0 && (
+          <div>
+            <label className="block font-medium">Prompt Template</label>
+            <select
+              value={selectedPrompt}
+              onChange={(e) => setSelectedPrompt(e.target.value)}
+              disabled={loading}
+              className="mt-1 w-full p-2 border rounded"
+            >
+              {prompts.map((p, idx) => (
+                <option key={idx} value={p.content}>
+                  {p.title}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {previewUrl && (
           <div className="mb-2">

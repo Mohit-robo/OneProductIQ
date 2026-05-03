@@ -1,0 +1,23 @@
+Analyze the product image and extract physical attributes.
+
+Provide:
+1. Primary color (main color of product)
+2. Secondary colors (if present, as array)
+3. Color intensity (vibrant/muted/pastel/dark)
+4. Pattern/texture (e.g., "Solid", "Striped", "Floral", "Textured")
+5. Fit type if apparel (e.g., "Slim", "Fitted", "Relaxed", "Oversized")
+6. Visible design elements (pockets, zippers, buttons, seams, etc.)
+7. Brand name if visible (or "Unknown")
+
+Format as JSON:
+{
+  "primary_color": "string",
+  "secondary_colors": ["string"],
+  "color_intensity": "string",
+  "pattern": "string",
+  "fit": "string or null",
+  "design_elements": ["string"],
+  "brand": "string"
+}
+
+Be descriptive. "Navy blue" not just "blue".

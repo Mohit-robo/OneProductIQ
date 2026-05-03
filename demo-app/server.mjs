@@ -1,5 +1,7 @@
 import express from "express";
 import multer from "multer";
+import fs from "fs";
+import path from "path";
 
 let processor, model;
 
@@ -27,14 +29,37 @@ init().catch((e) => {
 const app = express();
 const upload = multer({ dest: "tmp/" });
 
+// Serve available prompts (filenames + content)
+app.get("/prompts", (req, res) => {
+  try {
+    const promptsDir = path.join(process.cwd(), "prompts");
+    const files = fs.readdirSync(promptsDir).filter((f) => f.endsWith(".txt"));
+    
+    const prompts = files.map((file) => {
+      const content = fs.readFileSync(path.join(promptsDir, file), "utf8");
+      return {
+        title: file.replace(".txt", ""),
+        content,
+      };
+    });
+    
+    res.json({ prompts });
+  } catch (err) {
+    console.error("Error reading prompts:", err);
+    res.status(500).json({ error: "Could not read prompts" });
+  }
+});
+
 app.post("/upload", upload.single("image"), async (req, res) => {
   try {
     const file = req.file;
+    const selectedPrompt = req.body.prompt || "Describe this image in detail.";
+    
     // Dynamic import for load_image to avoid ESM export issue
     const transformers = await import("@huggingface/transformers");
     const image = await transformers.load_image(`./tmp/${file.filename}`);
 
-    const messages = [{ role: "user", content: "<image>Describe this image in detail." }];
+    const messages = [{ role: "user", content: `<image>${selectedPrompt}` }];
     const prompt = await processor.apply_chat_template(messages, {
       add_generation_prompt: true,
     });

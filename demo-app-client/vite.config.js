@@ -9,6 +9,12 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      // Forward /prompts endpoint as well
+      "/prompts": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
 });
