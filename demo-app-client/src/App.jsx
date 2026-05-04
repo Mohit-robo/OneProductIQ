@@ -1,4 +1,9 @@
 import React, { useState, useEffect } from "react";
+import "./index.css";
+
+const cleanPromptTitle = (rawTitle) => {
+  return rawTitle.replace(/^\d+_/, "");
+};
 
 const App = () => {
   const [imageFile, setImageFile] = useState(null);
@@ -9,53 +14,59 @@ const App = () => {
   const [prompts, setPrompts] = useState([]);
   const [selectedPrompt, setSelectedPrompt] = useState("");
 
-  // Load prompts on mount
   useEffect(() => {
     const fetchPrompts = async () => {
       try {
         const res = await fetch("/prompts");
+
         if (res.ok) {
           const data = await res.json();
-          setPrompts(data.prompts);
-          if (data.prompts.length > 0) {
+          setPrompts(data.prompts || []);
+
+          if (data.prompts?.length > 0) {
             setSelectedPrompt(data.prompts[0].content);
           }
         }
       } catch (err) {
-        console.error("Failed to load prompts:", err);
+        console.error("Prompt loading failed", err);
       }
     };
+
     fetchPrompts();
-    
-    return () => {
-      if (previewUrl) {
-        URL.revokeObjectURL(previewUrl);
-      }
-    };
   }, []);
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
+
+    if (!file) return;
+
     setImageFile(file);
-    if (file) {
-      const url = URL.createObjectURL(file);
-      setPreviewUrl(url);
-    } else {
-      setPreviewUrl(null);
+
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+  };
+
+  const extractJSON = (text) => {
+  try {
+      const match = text.match(/\{[\s\S]*\}/);
+      return match ? JSON.parse(match[0]) : null;
+    } catch {
+      return null;
     }
   };
 
   const handleImageUpload = async (e) => {
     e.preventDefault();
+
     if (!imageFile) return;
+
     setLoading(true);
     setError("");
+    setDescription("");
 
     const formData = new FormData();
     formData.append("image", imageFile);
-    if (selectedPrompt) {
-      formData.append("prompt", selectedPrompt);
-    }
+    formData.append("prompt", selectedPrompt || "");
 
     try {
       const response = await fetch("/upload", {
@@ -64,81 +75,164 @@ const App = () => {
       });
 
       if (!response.ok) {
-        const err = await response.text();
-        throw new Error(err || "Upload failed");
+        throw new Error("Upload failed");
       }
 
       const result = await response.json();
-      setDescription(result.description || "No description returned");
+
+      setDescription(result.description || "No response returned");
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
     }
   };
 
+  const resetAll = () => {
+    setImageFile(null);
+    setPreviewUrl(null);
+    setDescription("");
+    setError("");
+  };
+
   return (
-    <div className="min-h-screen bg-gray-100 p-4">
-      <h1 className="text-2xl font-bold mb-4">FastVLM Image Description Demo</h1>
-
-      {error && (
-        <div className="mb-4 p-2 bg-red-100 rounded">
-          <strong>Error:</strong> {error}
-        </div>
-      )}
-
-      <form onSubmit={handleImageUpload} className="space-y-4">
-        <div>
-          <label className="block font-medium">Select an image</label>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handleFileChange}
-            disabled={loading}
-            className="mt-1 w-full p-2 border rounded"
-          />
-        </div>
-
-        {prompts.length > 0 && (
+    <div className="page-shell">
+      <div className="app-card">
+        <div className="header-section">
           <div>
-            <label className="block font-medium">Prompt Template</label>
-            <select
-              value={selectedPrompt}
-              onChange={(e) => setSelectedPrompt(e.target.value)}
-              disabled={loading}
-              className="mt-1 w-full p-2 border rounded"
-            >
-              {prompts.map((p, idx) => (
-                <option key={idx} value={p.content}>
-                  {p.title}
-                </option>
-              ))}
-            </select>
+            <h1>Product Intelligence</h1>
+            <p>Upload an image and analyze ecommerce metadata</p>
           </div>
-        )}
-
-        {previewUrl && (
-          <div className="mb-2">
-            <img src={previewUrl} className="max-w-xs max-h-xs rounded" alt="preview" />
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={loading || !imageFile}
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-        >
-          {loading ? "Processing..." : "Upload & Describe"}
-        </button>
-      </form>
-
-      {description && (
-        <div className="mt-6 p-4 bg-white rounded shadow-lg">
-          <h2 className="text-lg font-semibold mb-2">Generated Description</h2>
-          <p>{description}</p>
         </div>
-      )}
+
+        {error && (
+          <div className="error-box">
+            <strong>Error:</strong> {error}
+          </div>
+        )}
+
+        <div className="layout-grid">
+          <div className="panel">
+            <h2>Upload Product Image</h2>
+
+            <form onSubmit={handleImageUpload}>
+              <div className="field-group">
+                <label>Select Image</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  disabled={loading}
+                />
+              </div>
+
+              {prompts.length > 0 && (
+                <div className="field-group">
+                  <label>Prompt Template</label>
+                  <select
+                    value={selectedPrompt}
+                    onChange={(e) => setSelectedPrompt(e.target.value)}
+                    disabled={loading}
+                  >
+                    {prompts.map((prompt, idx) => (
+                      <option key={idx} value={prompt.content}>
+                        {cleanPromptTitle(prompt.title)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {previewUrl && (
+                <div className="preview-wrapper">
+                  <div className="preview-header">
+                    <span>Preview</span>
+                    <span>
+                      {imageFile?.name} · {(imageFile?.size / 1024).toFixed(1)} KB
+                    </span>
+                  </div>
+
+                  <div className="preview-box">
+                    <img src={previewUrl} alt="preview" className="preview-image" />
+                  </div>
+                </div>
+              )}
+
+              <div className="button-row">
+                <button
+                  type="submit"
+                  disabled={loading || !imageFile}
+                  className="primary-btn"
+                >
+                  {loading ? "Processing..." : "Analyze Product"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={resetAll}
+                  className="secondary-btn"
+                >
+                  Reset
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <div className="panel">
+            <h2>Results</h2>
+
+            {!description && (
+              <div className="placeholder-box">
+                Upload an image and run analysis.
+              </div>
+            )}
+
+            {description && (() => {
+              const data = extractJSON(description);
+
+              if (!data) {
+                return (
+                  <div className="result-box">
+                    <p>{description}</p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="result-grid">
+                  
+                  {/* Product Info */}
+                  <div className="result-card">
+                    <h3>Product Info</h3>
+                    <p><strong>Type:</strong> {data.product_type || "-"}</p>
+                    <p><strong>Category:</strong> {data.main_category || "-"}</p>
+                    <p><strong>Subcategory:</strong> {data.subcategory || "-"}</p>
+                    <p><strong>Brand:</strong> {data.brand || "-"}</p>
+                  </div>
+
+                  {/* Attributes */}
+                  <div className="result-card">
+                    <h3>Attributes</h3>
+                    <p><strong>Primary Color:</strong> {data.primary_color || "-"}</p>
+                    <p><strong>Pattern:</strong> {data.pattern || "-"}</p>
+                    <p><strong>Fit:</strong> {data.fit || "-"}</p>
+                  </div>
+
+                  {/* Style */}
+                  <div className="result-card">
+                    <h3>Style & Usage</h3>
+                    <p><strong>Occasion:</strong> {(data.occasions || []).join(", ")}</p>
+                    <p><strong>Gender:</strong> {data.target_gender || "-"}</p>
+                    <p><strong>Age Group:</strong> {data.age_demographic || "-"}</p>
+                  </div>
+
+                </div>
+              );
+            })()}
+            
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

@@ -1,29 +1,36 @@
-# Lessons Learned – Phase 2
+# Lessons Learned: UI Theme Synchronization
 
-## Backend‑Frontend Proxy Setup
-- Vite's `server.proxy` forwards `/upload` to the Express backend (`localhost:3000`).
-- Prevents CORS issues when front‑end runs on port 5173.
+## UI Redesign Coordination (2026-05-03)
+**Critical dependency discovered**: All visual changes require synchronized updates across the CSS ecosystem.
 
-## Dynamic ESM Imports
-- The HuggingFace `transformers` package uses `"exports"` fields that block direct `.default` imports.
-- Solution: load via `await import("@huggingface/transformers")` and destructure the needed symbols.
-- Keeps the server code compatible with Node 18 while avoiding ESM‑export errors.
+### Key Files & Dependencies:
+1. **demo-app-client/src/index.css**  
+   - Contains base theme definitions (slate-50 background, indigo accents)
+   - Defines component styles (.panel, .field-group, .preview-box, .button-row)
+   - *Must be updated simultaneously with any UI component changes*
 
-## React Upload Component
-- State handles selected file, loading flag, and error message.
-- `FormData` attached to the image file and posted to `/upload`.
-- Response JSON’s `description` field is displayed under “Generated Description”.
+2. **demo-app-client/src/App.jsx**  
+   - Main UI component that references CSS classes
+   - Requires matching class names/structure from index.css
 
-## Minimal Tailwind Styling (optional)
-- Basic spacing, rounded corners, and button colors improve readability.
-- No heavy UI framework required for a functional prototype.
+3. **docs/todo.md**  
+   - Must track CSS synchronization tasks as dependencies
 
-## Testing Workflow
-- Start backend: `node demo-app/server.mjs`.
-- Run front‑end dev server: `npm run dev` inside `demo-app-client`.
-- Open `http://localhost:5173` in a browser, select an image, and see the generated description instantly.
+### Consequences of Misalignment:
+- **Visual regressions** when JSX updates don't match CSS classes
+- **Broken styling** when theme variables change without CSS updates
+- **Inconsistent user experience** across UI components
 
-## Next Steps
-- Move from Vite dev server to a production build (`npm run build` + static serve) for final integration testing.
-- Add input validation and file size limits.
-- Consider caching image uploads or batching multiple images for parallel inference.
+### Best Practice: Theme Synchronization Protocol
+1. **At design initiation**: Identify all affected files (JSX, CSS, config)
+2. **At code changes**: Verify CSS class names match index.css definitions
+3. **At visual updates**: Check that theme variables (colors, spacing) are updated in index.css
+4. **At final review**: Confirm CSS modifications align with new UI specifications
+
+### Lessons Learned:
+- UI redesigns are **system-wide operations**, not isolated component changes
+- **index.css acts as the central theme registry** - all visual changes flow through it
+- Failing to synchronize CSS causes **immediate visual breakdowns** that are hard to trace
+- **Document CSS dependencies** in todo.md when making UI-related changes
+
+> *Moving forward: All UI-related tasks must reference CSS synchronization requirements in their task descriptions to prevent recurrence of this issue.*

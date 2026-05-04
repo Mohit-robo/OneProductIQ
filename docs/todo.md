@@ -1,10 +1,9 @@
 ## Phase 1 – Test FastVLM with huggingface.js
-
 - [X] Test the basic fastvlm model with image and prompt, using transformers.js
 - [X] Test onnx weights input and outputs and document them for further usage. Saved under `triton_server_test`
+- 
 
 ## Phase 2 – Demo Node.js Frontend App
-
 ### Current Sprint
 - [X] Task 1: Scaffold Vite + React app (`demo-app-client`)
 - [X] Task 2: Add `ImageUpload` component that POSTs to `http://localhost:3000/upload`
@@ -28,3 +27,4 @@
 1. Test prompt selection flow in browser with all 3 templates
 2. Add more prompt templates as needed
 3. Consider adding prompt preview or edit functionality
+4. [X] Document CSS synchronization requirements for future UI changes (per lessons.md)
