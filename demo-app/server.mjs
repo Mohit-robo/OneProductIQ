@@ -66,8 +66,10 @@ app.post("/upload", upload.single("image"), async (req, res) => {
     const inputs = await processor(image, prompt, { add_special_tokens: false });
     const outputs = await model.generate({
       ...inputs,
-      max_new_tokens: 128,
-      do_sample: false,
+      max_new_tokens: 512,
+      do_sample: true,
+      temperature: 0.1,
+      repetition_penalty: 1.2,
     });
     const decoded = await processor.batch_decode(
       outputs.slice(null, [inputs.input_ids.dims.at(-1), null]),

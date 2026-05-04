@@ -2,7 +2,10 @@ import React, { useState, useEffect } from "react";
 import "./index.css";
 
 const cleanPromptTitle = (rawTitle) => {
-  return rawTitle.replace(/^\d+_/, "");
+  return rawTitle
+    .replace(/^\d+_/, "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (l) => l.toUpperCase());
 };
 
 const App = () => {
@@ -13,6 +16,11 @@ const App = () => {
   const [error, setError] = useState("");
   const [prompts, setPrompts] = useState([]);
   const [selectedPrompt, setSelectedPrompt] = useState("");
+
+  useEffect(() => {
+    setDescription("");
+    setError("");
+  }, [selectedPrompt]);
 
   useEffect(() => {
     const fetchPrompts = async () => {
@@ -37,27 +45,53 @@ const App = () => {
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
-
     if (!file) return;
 
     setImageFile(file);
-
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
+    setPreviewUrl(URL.createObjectURL(file));
   };
 
   const extractJSON = (text) => {
-  try {
-      const match = text.match(/\{[\s\S]*\}/);
-      return match ? JSON.parse(match[0]) : null;
-    } catch {
-      return null;
+    // 1. Try standard JSON extraction
+    const match = text.match(/\{[\s\S]*\}/);
+    if (match) {
+      try {
+        return JSON.parse(match[0]);
+      } catch {
+        // Continue to resilient extraction if parse fails
+      }
     }
+
+    // 2. Resilient regex-based extraction (handles truncated or malformed JSON)
+    const data = {};
+    const keyValRegex = /"([^"]+)":\s*(?:"([^"]*)"|\[([^\]]*)\]|([0-9.]+)|(true|false|null))/g;
+    let m;
+    while ((m = keyValRegex.exec(text)) !== null) {
+      const key = m[1];
+      let value;
+      if (m[2] !== undefined) value = m[2];
+      else if (m[3] !== undefined) {
+        value = m[3]
+          .split(",")
+          .map((s) => s.trim().replace(/^"|"$/g, ""))
+          .filter((s) => s !== "");
+      } else if (m[4] !== undefined) value = Number(m[4]);
+      else if (m[5] !== undefined) {
+        if (m[5] === "true") value = true;
+        else if (m[5] === "false") value = false;
+        else value = null;
+      }
+
+      if (value !== undefined && data[key] === undefined) {
+        data[key] = value;
+      }
+    }
+
+    return Object.keys(data).length > 0 ? data : null;
   };
 
   const handleImageUpload = async (e) => {
     e.preventDefault();
-
     if (!imageFile) return;
 
     setLoading(true);
@@ -74,12 +108,9 @@ const App = () => {
         body: formData,
       });
 
-      if (!response.ok) {
-        throw new Error("Upload failed");
-      }
+      if (!response.ok) throw new Error("Upload failed");
 
       const result = await response.json();
-
       setDescription(result.description || "No response returned");
     } catch (err) {
       setError(err.message);
@@ -126,22 +157,6 @@ const App = () => {
                 />
               </div>
 
-              {prompts.length > 0 && (
-                <div className="field-group">
-                  <label>Prompt Template</label>
-                  <select
-                    value={selectedPrompt}
-                    onChange={(e) => setSelectedPrompt(e.target.value)}
-                    disabled={loading}
-                  >
-                    {prompts.map((prompt, idx) => (
-                      <option key={idx} value={prompt.content}>
-                        {cleanPromptTitle(prompt.title)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
 
               {previewUrl && (
                 <div className="preview-wrapper">
@@ -153,7 +168,11 @@ const App = () => {
                   </div>
 
                   <div className="preview-box">
-                    <img src={previewUrl} alt="preview" className="preview-image" />
+                    <img
+                      src={previewUrl}
+                      alt="preview"
+                      className="preview-image"
+                    />
                   </div>
                 </div>
               )}
@@ -198,38 +217,85 @@ const App = () => {
                 );
               }
 
+              const isBlank = (val) => {
+                if (val === null || val === undefined) return true;
+                if (typeof val === "string") {
+                  const lower = val.trim().toLowerCase();
+                  return (
+                    lower === "" ||
+                    lower === "n/a" ||
+                    lower === "none" ||
+                    lower === "unknown" ||
+                    lower === "null" ||
+                    lower === "not applicable"
+                  );
+                }
+                if (Array.isArray(val)) return val.length === 0;
+                if (typeof val === "object") return Object.keys(val).length === 0;
+                return false;
+              };
+
+              const getEntries = (obj, prefix = "") => {
+                let entries = [];
+                for (const [key, value] of Object.entries(obj)) {
+                  if (isBlank(value)) continue;
+
+                  const label = key
+                    .replace(/_/g, " ")
+                    .replace(/\b\w/g, (l) => l.toUpperCase());
+                  const fullLabel = prefix ? `${prefix} - ${label}` : label;
+
+                  if (
+                    typeof value === "object" &&
+                    !Array.isArray(value) &&
+                    value !== null
+                  ) {
+                    entries = entries.concat(getEntries(value, fullLabel));
+                  } else {
+                    // De-duplicate array values to handle AI loops
+                    const finalValue = Array.isArray(value)
+                      ? [...new Set(value)]
+                      : value;
+                    entries.push({ label: fullLabel, value: finalValue });
+                  }
+                }
+                return entries;
+              };
+
+              const entries = getEntries(data);
+
+              if (entries.length === 0) {
+                return (
+                  <div className="result-box">
+                    No relevant structured data found.
+                  </div>
+                );
+              }
+
+              const selectedPromptObj = prompts.find(
+                (p) => p.content === selectedPrompt
+              );
+              const title = selectedPromptObj
+                ? cleanPromptTitle(selectedPromptObj.title)
+                : "Analysis Results";
+
               return (
                 <div className="result-grid">
-                  
-                  {/* Product Info */}
                   <div className="result-card">
-                    <h3>Product Info</h3>
-                    <p><strong>Type:</strong> {data.product_type || "-"}</p>
-                    <p><strong>Category:</strong> {data.main_category || "-"}</p>
-                    <p><strong>Subcategory:</strong> {data.subcategory || "-"}</p>
-                    <p><strong>Brand:</strong> {data.brand || "-"}</p>
-                  </div>
+                    <h3>{title}</h3>
 
-                  {/* Attributes */}
-                  <div className="result-card">
-                    <h3>Attributes</h3>
-                    <p><strong>Primary Color:</strong> {data.primary_color || "-"}</p>
-                    <p><strong>Pattern:</strong> {data.pattern || "-"}</p>
-                    <p><strong>Fit:</strong> {data.fit || "-"}</p>
+                    {entries.map((entry, idx) => (
+                      <p key={idx}>
+                        <strong>{entry.label}:</strong>{" "}
+                        {Array.isArray(entry.value)
+                          ? entry.value.join(", ")
+                          : entry.value.toString()}
+                      </p>
+                    ))}
                   </div>
-
-                  {/* Style */}
-                  <div className="result-card">
-                    <h3>Style & Usage</h3>
-                    <p><strong>Occasion:</strong> {(data.occasions || []).join(", ")}</p>
-                    <p><strong>Gender:</strong> {data.target_gender || "-"}</p>
-                    <p><strong>Age Group:</strong> {data.age_demographic || "-"}</p>
-                  </div>
-
                 </div>
               );
             })()}
-            
           </div>
         </div>
       </div>

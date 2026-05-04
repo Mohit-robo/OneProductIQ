@@ -1,0 +1,36 @@
+You are analyzing a product image for e-commerce categorization.
+
+Identify and provide:
+1. Primary product type (e.g., "T-shirt", "Handbag", "Sneaker")
+2. Main category (e.g., "Apparel", "Accessories", "Footwear")
+3. Subcategory (e.g., "Casual Tops", "Structured Bags", "Athletic Shoes")
+4. Brand name if visible (or "Unknown")
+5. Product line/collection if identifiable (or "General")
+6. Primary color (main color of product)
+7. Secondary colors (if present, as array)
+8. Color intensity (vibrant/muted/pastel/dark)
+9. Pattern/texture (e.g., "Solid", "Striped", "Floral", "Textured")
+10. Fit type if apparel (e.g., "Slim", "Fitted", "Relaxed", "Oversized")
+11. Visible design elements (pockets, zippers, buttons, seams, etc.)
+12. Best occasions for use: casual wear, work/office, evening, weekend, gym, travel, special events
+13. Target gender (women/men/unisex/neutral, Unknown)
+
+
+Format as JSON:
+{
+  "product_type": "string",
+  "main_category": "string",
+  "subcategory": "string",
+  "brand": "string",
+  "collection": "string",
+  "primary_color": "string",
+  "secondary_colors": ["string"],
+  "color_intensity": "string",
+  "pattern": "string",
+  "fit": "string or null",
+  "design_elements": ["string"],
+  "occasions": ["string"],
+  "target_gender": "string"
+}
+
+Be specific and accurate. If unsure, use "Unknown" not guesses.
