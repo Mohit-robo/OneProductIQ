@@ -1,106 +1,91 @@
-import React, { useState, useEffect } from "react";
-import "./index.css";
+import React, { useState, useEffect } from 'react';
+import { QueueDisplay } from './components/QueueDisplay';
 
-const cleanPromptTitle = (rawTitle) => {
-  return rawTitle
-    .replace(/^\d+_/, "")
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (l) => l.toUpperCase());
-};
-
-const App = () => {
-  const [imageFile, setImageFile] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState(null);
-  const [description, setDescription] = useState("");
-  const [loading, setLoading] = useState(false);
+export default function App() {
+  const [images, setImages] = useState([]);
+  const [results, setResults] = useState([]);
+  const [processing, setProcessing] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [folderMode, setFolderMode] = useState(false);
+  
+  // Single analysis state
+  const [singleImage, setSingleImage] = useState(null);
+  const [singlePreview, setSinglePreview] = useState(null);
+  const [singleResult, setSingleResult] = useState("");
+  const [singleLoading, setSingleLoading] = useState(false);
   const [error, setError] = useState("");
-  const [prompts, setPrompts] = useState([]);
-  const [selectedPrompt, setSelectedPrompt] = useState("");
 
+  // Check initial status and start polling if needed
   useEffect(() => {
-    setDescription("");
-    setError("");
-  }, [selectedPrompt]);
-
-  useEffect(() => {
-    const fetchPrompts = async () => {
+    const checkStatus = async () => {
       try {
-        const res = await fetch("/prompts");
-
+        const res = await fetch('/batch-status');
         if (res.ok) {
           const data = await res.json();
-          setPrompts(data.prompts || []);
-
-          if (data.prompts?.length > 0) {
-            setSelectedPrompt(data.prompts[0].content);
+          if (data.resultsCount > 0) {
+            setResults(new Array(data.resultsCount).fill({}));
+          }
+          if (data.processing || data.queueLength > 0) {
+            setProcessing(true);
           }
         }
-      } catch (err) {
-        console.error("Prompt loading failed", err);
-      }
+      } catch (err) { }
     };
-
-    fetchPrompts();
+    checkStatus();
   }, []);
 
+  // Poll for results if processing batch
+  useEffect(() => {
+    let interval;
+    if (processing) {
+      interval = setInterval(async () => {
+        try {
+          const res = await fetch('/batch-status');
+          if (res.ok) {
+            const data = await res.json();
+            if (data.resultsCount > results.length) {
+                setResults(new Array(data.resultsCount).fill({}));
+            }
+            if (!data.processing && data.queueLength === 0) {
+              setProcessing(false);
+            }
+          }
+        } catch (err) { }
+      }, 3000);
+    }
+    return () => clearInterval(interval);
+  }, [processing, results.length]);
+
   const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const files = Array.from(e.target.files).filter(f => 
+      f.type.startsWith('image/') || 
+      f.name.toLowerCase().endsWith('.zip') ||
+      folderMode // Accept all if in folder mode (backend filters)
+    );
 
-    setImageFile(file);
-    setPreviewUrl(URL.createObjectURL(file));
+    if (files.length === 1 && !folderMode && !files[0].name.toLowerCase().endsWith('.zip')) {
+      setSingleImage(files[0]);
+      setSinglePreview(URL.createObjectURL(files[0]));
+      setSingleResult("");
+      setImages([]);
+    } else {
+      setImages(files);
+      setSinglePreview(null);
+      setSingleImage(null);
+    }
   };
 
-  const extractJSON = (text) => {
-    // 1. Try standard JSON extraction
-    const match = text.match(/\{[\s\S]*\}/);
-    if (match) {
-      try {
-        return JSON.parse(match[0]);
-      } catch {
-        // Continue to resilient extraction if parse fails
-      }
-    }
-
-    // 2. Resilient regex-based extraction (handles truncated or malformed JSON)
-    const data = {};
-    const keyValRegex = /"([^"]+)":\s*(?:"([^"]*)"|\[([^\]]*)\]|([0-9.]+)|(true|false|null))/g;
-    let m;
-    while ((m = keyValRegex.exec(text)) !== null) {
-      const key = m[1];
-      let value;
-      if (m[2] !== undefined) value = m[2];
-      else if (m[3] !== undefined) {
-        value = m[3]
-          .split(",")
-          .map((s) => s.trim().replace(/^"|"$/g, ""))
-          .filter((s) => s !== "");
-      } else if (m[4] !== undefined) value = Number(m[4]);
-      else if (m[5] !== undefined) {
-        if (m[5] === "true") value = true;
-        else if (m[5] === "false") value = false;
-        else value = null;
-      }
-
-      if (value !== undefined && data[key] === undefined) {
-        data[key] = value;
-      }
-    }
-
-    return Object.keys(data).length > 0 ? data : null;
-  };
-
-  const handleImageUpload = async (e) => {
+  const handleSingleUpload = async (e) => {
     e.preventDefault();
-    if (!imageFile) return;
+    if (!singleImage) return;
 
-    setLoading(true);
+    setSingleLoading(true);
     setError("");
-    setDescription("");
+    setSingleResult("");
 
     const formData = new FormData();
-    formData.append("image", imageFile);
-    formData.append("prompt", selectedPrompt || "");
+    formData.append("image", singleImage);
+    formData.append("prompt", "");
 
     try {
       const response = await fetch("/upload", {
@@ -108,199 +93,197 @@ const App = () => {
         body: formData,
       });
 
-      if (!response.ok) throw new Error("Upload failed");
-
+      if (!response.ok) throw new Error("Analysis failed");
       const result = await response.json();
-      setDescription(result.description || "No response returned");
+      setSingleResult(result.description || "No output");
     } catch (err) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      setSingleLoading(false);
     }
   };
 
-  const resetAll = () => {
-    setImageFile(null);
-    setPreviewUrl(null);
-    setDescription("");
-    setError("");
+  const startBatchProcessing = async () => {
+    if (images.length === 0 || uploading) return;
+
+    setUploading(true);
+    const formData = new FormData();
+    images.forEach(img => formData.append('images', img));
+
+    try {
+      const res = await fetch('/batch-process', {
+        method: 'POST',
+        body: formData,
+      });
+      if (res.ok) {
+        setProcessing(true);
+        setImages([]); 
+      } else {
+        const data = await res.json();
+        setError(data.error || "Batch failed");
+      }
+    } catch (err) {
+      setError("Network error");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const extractJSON = (text) => {
+    const match = text.match(/\{[\s\S]*\}/);
+    if (match) {
+      try { return JSON.parse(match[0]); } catch { }
+    }
+    return null;
+  };
+
+  const renderContent = (text) => {
+    const data = extractJSON(text);
+    if (!data) return <p>{text}</p>;
+
+    const isBlank = (val) => {
+      if (val === null || val === undefined) return true;
+      if (typeof val === "string") return val.trim() === "" || ["n/a", "none"].includes(val.toLowerCase());
+      return Array.isArray(val) ? val.length === 0 : false;
+    };
+
+    const entries = [];
+    for (const [k, v] of Object.entries(data)) {
+        if (isBlank(v)) continue;
+        const label = k.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
+        entries.push({ label, value: Array.isArray(v) ? v.join(", ") : v.toString() });
+    }
+
+    return (
+      <div className="result-grid">
+        {entries.map((e, i) => (
+          <div key={i} style={{ marginBottom: '8px' }}>
+            <span style={{ fontWeight: 600, color: '#64748b', fontSize: '12px', marginRight: '6px' }}>{e.label}:</span>
+            <span style={{ fontSize: '13px' }}>{e.value}</span>
+          </div>
+        ))}
+      </div>
+    );
   };
 
   return (
     <div className="page-shell">
       <div className="app-card">
-        <div className="header-section">
-          <div>
-            <h1>Product Intelligence</h1>
-            <p>Upload an image and analyze ecommerce metadata</p>
-          </div>
-        </div>
+        <header className="header-section">
+          <h1>OneProductIQ</h1>
+          <p>Metadata Enrichment Station</p>
+        </header>
 
-        {error && (
-          <div className="error-box">
-            <strong>Error:</strong> {error}
-          </div>
-        )}
+        {error && <div className="error-box">{error}</div>}
 
         <div className="layout-grid">
           <div className="panel">
-            <h2>Upload Product Image</h2>
-
-            <form onSubmit={handleImageUpload}>
-              <div className="field-group">
-                <label>Select Image</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileChange}
-                  disabled={loading}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+              <h2>Source Selection</h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                <span style={{ color: folderMode ? '#070707' : '#94a3b8', fontWeight: 600 }}>Folder Mode</span>
+                <input 
+                  type="checkbox" 
+                  checked={folderMode} 
+                  onChange={() => setFolderMode(!folderMode)} 
+                  style={{ cursor: 'pointer' }}
                 />
               </div>
+            </div>
+            
+            <div className="field-group">
+              <label>{folderMode ? 'Select Product Folder' : 'Product Images / ZIP'}</label>
+              <input 
+                type="file" 
+                multiple={!folderMode}
+                webkitdirectory={folderMode ? "true" : undefined}
+                directory={folderMode ? "true" : undefined}
+                onChange={handleFileChange} 
+              />
+              <p style={{ fontSize: '11px', color: '#64748b', marginTop: '6px' }}>
+                {folderMode 
+                  ? 'Note: All compatible images within the folder will be queued.' 
+                  : 'Upload images or a .zip archive containing product shots.'}
+              </p>
+            </div>
 
-
-              {previewUrl && (
-                <div className="preview-wrapper">
-                  <div className="preview-header">
-                    <span>Preview</span>
-                    <span>
-                      {imageFile?.name} · {(imageFile?.size / 1024).toFixed(1)} KB
-                    </span>
-                  </div>
-
-                  <div className="preview-box">
-                    <img
-                      src={previewUrl}
-                      alt="preview"
-                      className="preview-image"
-                    />
-                  </div>
+            {singleImage && (
+              <div className="preview-wrapper">
+                <div className="preview-header">
+                   <span>Selected: {singleImage.name}</span>
                 </div>
-              )}
-
-              <div className="button-row">
-                <button
-                  type="submit"
-                  disabled={loading || !imageFile}
-                  className="primary-btn"
+                <div className="preview-box">
+                   <img src={singlePreview} alt="Target" className="preview-image" />
+                </div>
+                <button 
+                  onClick={handleSingleUpload} 
+                  disabled={singleLoading} 
+                  className="primary-btn" 
+                  style={{ width: '100%', marginTop: '20px' }}
                 >
-                  {loading ? "Processing..." : "Analyze Product"}
+                  {singleLoading ? 'AI Analyzing...' : 'Deep Analysis'}
                 </button>
-
-                <button
-                  type="button"
-                  onClick={resetAll}
-                  className="secondary-btn"
-                >
-                  Reset
-                </button>
-              </div>
-            </form>
-          </div>
-
-          <div className="panel">
-            <h2>Results</h2>
-
-            {!description && (
-              <div className="placeholder-box">
-                Upload an image and run analysis.
               </div>
             )}
 
-            {description && (() => {
-              const data = extractJSON(description);
+            {images.length > 0 && (
+              <div className="batch-controls">
+                <p style={{ fontWeight: 600, fontSize: '13px' }}>{images.length} Images Ready</p>
+                <button 
+                  onClick={startBatchProcessing} 
+                  disabled={uploading || processing} 
+                  className="primary-btn" 
+                  style={{ width: '100%', marginTop: '10px' }}
+                >
+                  {uploading ? 'Uploading...' : 'Launch Batch Analysis'}
+                </button>
+              </div>
+            )}
 
-              if (!data) {
-                return (
-                  <div className="result-box">
-                    <p>{description}</p>
-                  </div>
-                );
-              }
+            <div style={{ marginTop: '30px', borderTop: '1px solid #e2e8f0', paddingTop: '20px' }}>
+                <h3 style={{ fontSize: '14px', marginBottom: '10px' }}>Operation Queue</h3>
+                <QueueDisplay isProcessing={processing} resultCount={results.length} />
+            </div>
+          </div>
 
-              const isBlank = (val) => {
-                if (val === null || val === undefined) return true;
-                if (typeof val === "string") {
-                  const lower = val.trim().toLowerCase();
-                  return (
-                    lower === "" ||
-                    lower === "n/a" ||
-                    lower === "none" ||
-                    lower === "unknown" ||
-                    lower === "null" ||
-                    lower === "not applicable"
-                  );
-                }
-                if (Array.isArray(val)) return val.length === 0;
-                if (typeof val === "object") return Object.keys(val).length === 0;
-                return false;
-              };
+          <div className="panel">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h2>Analysis Output</h2>
+                {results.length > 0 && (
+                  <button 
+                    onClick={() => window.location.href='/batch-results?format=csv'}
+                    className="secondary-btn"
+                    style={{ fontSize: '11px', padding: '6px 12px' }}
+                  >
+                    Export Batch CSV ({results.length})
+                  </button>
+                )}
+            </div>
 
-              const getEntries = (obj, prefix = "") => {
-                let entries = [];
-                for (const [key, value] of Object.entries(obj)) {
-                  if (isBlank(value)) continue;
-
-                  const label = key
-                    .replace(/_/g, " ")
-                    .replace(/\b\w/g, (l) => l.toUpperCase());
-                  const fullLabel = prefix ? `${prefix} - ${label}` : label;
-
-                  if (
-                    typeof value === "object" &&
-                    !Array.isArray(value) &&
-                    value !== null
-                  ) {
-                    entries = entries.concat(getEntries(value, fullLabel));
-                  } else {
-                    // De-duplicate array values to handle AI loops
-                    const finalValue = Array.isArray(value)
-                      ? [...new Set(value)]
-                      : value;
-                    entries.push({ label: fullLabel, value: finalValue });
-                  }
-                }
-                return entries;
-              };
-
-              const entries = getEntries(data);
-
-              if (entries.length === 0) {
-                return (
-                  <div className="result-box">
-                    No relevant structured data found.
-                  </div>
-                );
-              }
-
-              const selectedPromptObj = prompts.find(
-                (p) => p.content === selectedPrompt
-              );
-              const title = selectedPromptObj
-                ? cleanPromptTitle(selectedPromptObj.title)
-                : "Analysis Results";
-
-              return (
-                <div className="result-grid">
-                  <div className="result-card">
-                    <h3>{title}</h3>
-
-                    {entries.map((entry, idx) => (
-                      <p key={idx}>
-                        <strong>{entry.label}:</strong>{" "}
-                        {Array.isArray(entry.value)
-                          ? entry.value.join(", ")
-                          : entry.value.toString()}
-                      </p>
-                    ))}
-                  </div>
+            <div className="placeholder-box">
+              {singleResult && (
+                <div className="result-card" style={{ border: '2px solid #070707' }}>
+                   <h3>Active Deep-Dive</h3>
+                   {renderContent(singleResult)}
                 </div>
-              );
-            })()}
+              )}
+
+              {!singleResult && results.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '100px 0', opacity: 0.3 }}>
+                   <p>No processed data to display yet.</p>
+                </div>
+              )}
+
+              {!singleResult && results.length > 0 && (
+                <div style={{ textAlign: 'center', padding: '100px 0', color: '#64748b' }}>
+                   <p style={{ fontSize: '18px', fontWeight: 600 }}>Batch Processing Active</p>
+                   <p style={{ fontSize: '13px', marginTop: '10px' }}>Individual results are hidden in batch mode. Use the Export button to download data.</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
     </div>
   );
-};
-
-export default App;
+}

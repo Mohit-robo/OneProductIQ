@@ -11,6 +11,7 @@ const processor = await AutoProcessor.from_pretrained(model_id);
 
 console.log("Loading model...");
 const model = await AutoModelForImageTextToText.from_pretrained(model_id, {
+  device: "cuda",
   dtype: {
     embed_tokens: "fp16",
     vision_encoder: "q4",
@@ -47,8 +48,8 @@ const outputs = await model.generate({
   do_sample: false,
 });
 
-const decoded = processor.batch_decode(outputs.slice(null, [inputs.input_ids.dims.at(-1), null]), 
-  {skip_special_tokens: true});
+const decoded = processor.batch_decode(outputs.slice(null, [inputs.input_ids.dims.at(-1), null]),
+  { skip_special_tokens: true });
 
 console.log("\nRESULT:\n");
 console.log(decoded[0]);
