@@ -31,4 +31,15 @@
 - **Fast Cycles**: Small models (0.5B) often show 0% utilization in periodic loggers because inference finishes too quickly for the poll rate, even when memory is held.
 - **Initial Load**: Always verify "FastVLM loaded on CUDA" in logs to confirm the GPU execution provider is active.
 
-> *Moving forward: All batch features must include a state-recovery path in the frontend and a data-sanitization path in the backend.*
+## Advanced Reliability & Benchmarking (2026-05-06)
+
+### Model Reliability & Hallucination:
+- **Deterministic Inference**: For categorization tasks, **greedy decoding** (`do_sample: false`) is significantly more stable than sampling. It prevents the model from "spiraling" into hallucinatory loops.
+- **Repetition Spiral**: Small models require a high `repetition_penalty` (1.5+) to prevent them from repeating color lists or design elements indefinitely.
+- **Signal-to-Noise Filtering**: Aggressive post-inference cleaning to strip redundant or false boolean keys (e.g., `IsWhite: false`) significantly improves data signal.
+- **Dirty JSON Healing**: For fragmented AI outputs, a robust frontend extraction engine with basic regex-repair logic (dangling commas, unclosed braces) prevents UI failures.
+
+### Benchmarking (GT Verification):
+- **Numeric Map Alignment**: Tracking accuracy requires robust ID-extraction from filenames to map images to Ground Truth (GT) datasets like `styles.csv`.
+
+> *Moving forward: Maintain a dual-layered cleaning approach (Backend sanitization + Frontend repair) for all AI metadata.*

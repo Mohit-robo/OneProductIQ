@@ -3,11 +3,11 @@
 ![UI Demo](./architecture_planning/assets/UI_Demo.png)
 
 ## Overview
-**OneProductIQ** is a high-performance system designed for bulk product metadata enrichment. It leverages a **VLM** model to transform raw product images into structured, clean, and actionable data.
+**OneProductIQ** is a high-performance system designed for bulk product metadata enrichment and automated catalog verification. It transforms raw product images into structured, clean, and benchmarked data using a quantized **FastVLM-0.5B-ONNX** model running on **CUDA**.
 
 The system supports two distinct workflows:
-- **Deep Analysis**: A precise, single-image deep dive with live previews and immediate metadata extraction.
-- **Batch Processing**: High-volume sequential processing of hundreds of images via ZIP uploads or Folder selection, featuring a real-time operation queue and CSV export.
+- **Deep Analysis**: A precise single-image deep dive with side-by-side **Ground Truth (GT)** verification.
+- **Batch Processing**: High-volume sequential processing of hundreds of images with automated reliability filtering and CSV export.
 
 ---
 
@@ -15,13 +15,13 @@ The system supports two distinct workflows:
 
 ```
 +-------------------+       +-------------------+       +-------------------+
-|   Frontend (Vite) | <---> |   Backend (Node)  | <---> |   VLM   |
+|   Frontend (Vite) | <---> |   Backend (Node)  | <---> |       VLM         |
 +-------------------+       +-------------------+       +-------------------+
         │                         │                           │
         │   • Hybrid UI Mode      │   • Sequential Queue      │   • ONNX Runtime
-        │   • ZIP/Folder Intake   │   • ZIP Extraction        │   • CUDA Acceleration
-        │   • Progress Polling    │   • Data Deduplication    │   • JSON Sanitization
-        │   • Local CSV Export    │   • Session Persistence   │   • High-Performance VLM
+        │   • Benchmark Dashboard │   • ZIP Extraction        │   • CUDA Acceleration
+        │   • Progress Polling    │   • GT Comparison         │   • Self-Healing JSON
+        │   • Local CSV Export    │   • Session Persistence   │   • Reliability Layer
         └──────────────────────────┘                       └───────────────────┘
 ```
 
@@ -29,26 +29,26 @@ The system supports two distinct workflows:
 
 | Layer | Responsibility | Main Files |
 |-------|----------------|------------|
-| **Frontend** | React-driven UI with hybrid analysis modes. Supports bulk intake via `webkitdirectory`. | `demo-app-client/src/App.jsx` |
-| **Backend** | Sequential image queue, state-aware polling endpoints, for ZIP handling and deduplication logic. | `demo-app/server.cjs` |
-| **ML Model** | FastVLM-0.5B-ONNX with custom generation parameters tuned for structured JSON output. | Integrated via `@huggingface/transformers` |
+| **Frontend** | React-driven UI with hybrid analysis modes. Features a premium Metadata Table and Benchmark Validation panel. | `demo-app-client/src/App.jsx` |
+| **Backend** | Sequential image queue with integrated **Ground Truth** mapping and self-healing JSON extraction. | `demo-app/server.cjs` |
+| **ML Model** | FastVLM-0.5B-ONNX with deterministic inference tuned for zero-hallucination structured output. | Integrated via `@huggingface/transformers` |
 
 ---
 
-## Features
+## Core Features
 
 ### 🚀 High-Volume Batching
-- **ZIP Upload Support**: Upload thousands of product shots in a single high-compression archive.
-- **Folder Selection**: Select entire local directories for immediate queueing.
-- **Sequential Queueing**: Optimized model inference that prevents memory overflows by processing tasks one-by-one.
+- **ZIP/Folder Intake**: Upload thousands of product shots or select entire local directories for immediate queueing.
+- **Sequential Queueing**: Optimized model inference that prevents VRAM overflows by processing tasks one-by-one.
 
-### 🧹 Premium Data Quality
-- **Automated Deduplication**: Smart array cleaning that removes redundant AI-generated metadata (e.g., repeating style tags).
-- **One-Click Export**: Download your entire session's results as a sanitized, spreadsheet-ready CSV.
+### 🛡️ Reliability Layer
+- **Self-Healing JSON**: Heuristic repair system that fixes truncated or malformed AI outputs (unclosed quotes, braces, brackets).
+- **Hallucination Shield**: Aggressive repetition penalties and semantic key merging to ensure fixed, predictable schemas.
+- **Automated Deduplication**: Smart array cleaning and color-list capping to prevent metadata "spiraling."
 
-### 🌓 Hybrid Workflow UI
-- **Real-Time Progress**: Live progress bars and status indicators showing the exact file being analyzed.
-- **Session Recovery**: UI automatically resumes tracking even after browser refreshes or server restarts.
+### 📊 Intelligent Benchmarking
+- **GT Verification**: Automated side-by-side comparison against industry datasets (`styles.csv`).
+- **Accuracy Reporting**: Visual status pills (Match/Diff) for instant accuracy tracking across Gender, Category, and Color.
 
 ---
 
@@ -59,7 +59,7 @@ The system supports two distinct workflows:
 - **GPU with CUDA Support** (Recommended for performance)
 
 ### Fast Start
-1. **Root Install**: `npm install` (Installs `adm-zip`, `transformers`, etc.)
+1. **Root Install**: `npm install`
 2. **Backend**: `cd demo-app && node server.cjs`
 3. **Frontend**: `cd demo-app-client && npm run dev`
 4. **Access**: Navigate to `http://localhost:5173`
@@ -68,26 +68,26 @@ The system supports two distinct workflows:
 
 ## Usage Flow
 
-1. **Select Mode**: Use the "Folder Mode" toggle if you want to select a directory.
-2. **Add Assets**: Select 1 image for **Deep Analysis** or multiple/ZIP for **Batch Analysis**.
-3. **Queue**: Click *Launch Batch Analysis*. monitor progress via the **Operation Queue**.
-4. **Export**: Click *Export Batch CSV* to download your structured product metadata.
+1. **Select Mode**: Use the "Folder Mode" toggle to select directory or individual assets.
+2. **Deep Dive**: Select 1 image and click **Deep Analysis** to trigger the **Benchmark Validation** panel.
+3. **Batch Launch**: monitor progress via the **Operation Queue** as the system processes your bulk catalog.
+4. **Export**: Click *Export Batch CSV* to download structured metadata with integrated accuracy summaries.
 
 ---
 
 ## Roadmap
 
-- [X] Phase 1: FastVLM Core Integration
-- [X] Phase 2: Single-Image Demo App
-- [X] Phase 3: Sequential Batch Processing & ZIP/Folder Support
-- [ ] Phase 4: Multi-Model Orchestration & Data Verification Workflows
+- [X] Phase 1-2: Core VLM Integration & Single-Image UI
+- [X] Phase 3: Bulk Processing & ZIP/Folder Support
+- [X] Phase 4: Output Verification & Reliability Layer
+- [ ] Phase 5: KV Cache Optimization & Constrained Logic Decoding
 
 ---
 
 ## Lessons Learned
 Recorded in `docs/lessons.md`. Key insights include:
-- The necessity of **session-aware polling** for high-latency AI tasks.
-- The critical role of **server-side deduplication** for LLM/VLM outputs.
+- The power of **Greedy Decoding** for attribute consistency.
+- Implementing **Dirty JSON Healing** for resource-constrained VLM outputs.
 - Synchronizing **Vite Proxy rules** with backend router expansion.
 
 ---
@@ -95,4 +95,4 @@ Recorded in `docs/lessons.md`. Key insights include:
 ## License
 MIT License
 
-*Updated by the OneProductIQ team on 2026-05-04.*
+*Updated by the OneProductIQ team on 2026-05-06.*

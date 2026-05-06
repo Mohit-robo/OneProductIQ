@@ -1,50 +1,30 @@
-## Phase 1 – Test FastVLM with huggingface.js
-- [X] Test the basic fastvlm model with image and prompt, using transformers.js
-- [X] Test onnx weights input and outputs and document them for further usage. Saved under `triton_server_test`
+# OneProductIQ: Project Roadmap
 
-## Phase 2 – Demo Node.js Frontend App
-### Current Sprint
-- [X] Task 1: Scaffold Vite + React app (`demo-app-client`)
-- [X] Task 2: Add `ImageUpload` component that POSTs to `http://localhost:3000/upload`
-- [X] Task 3: Show the returned `description` on the page
-- [X] Task 4: Apply minimal Tailwind styling (optional but recommended)
-- [X] Task 5: Verify end‑to‑end flow works in browser
-    [X] Task 6: Implement Prompt Management System (2026-05-03) - Single fixed prompt selected
-  - [X] Backend `/prompts` endpoint reads from `/prompts` folder
-    [X] Task 6: Implement Prompt Management System (2026-05-03) - Single fixed prompt selected
-  - [X] Vite proxy configured for `/prompts` route
-  - [X] Image preview constrained to 128px height with aspect ratio preserved
-- [X] Document CSS synchronization requirements for future UI changes (per lessons.md)
+## Phase 1: Core Analysis (Completed)
+- [x] Basic image analysis UI
+- [x] FastVLM-0.5B integration via ONNX
+- [x] Real-time metadata extraction
 
-- [X] **Single Prompt Flow** – Continue using the fixed prompt for all image analyses.
+## Phase 2: Design & Polish (Completed)
+- [x] Premium CSS Design System
+- [x] Interactive Single-Image Table
+- [x] Model loading health checks
 
-### Dependencies
-- Backend server (`demo-app/server.mjs`) must be running on port **3000**
-- Front‑end dev server runs on **5173** (Vite default) – proxy configured to forward `/upload` to backend
+## Phase 3: Bulk Processing (Completed)
+- [x] Sequential batch processing queue (CUDA)
+- [x] ZIP archive and Folder intake support
+- [x] Real-time polling and progress tracking
+- [x] JSON data sanitization and deduplication
 
-### Blockers
-- None
+## Phase 4: Verification & Benchmarking (Completed)
+- [x] Ground Truth (GT) dataset integration (`styles.csv`)
+- [x] Automated VLM vs GT comparison engine
+- [x] Visual benchmark dashboard/table
+- [x] Performance sanitization & hallucination filtering
 
-## Phase 3 - Sequential Batch Image Processing 
-  
-  ### Completed Tasks:
-  
-  - [X] Implementation of sequential image queue in `server.cjs`
-  - [X] Integrated `FastVLM-0.5B` ONNX model with CUDA acceleration
-  - [X] Created `QueueDisplay` component with real-time status polling
-  - [X] Added progress bar and "Analyzing: [file]" live status indicators
-  - [X] Implemented batch pause/resume control system
-  - [X] Built robust CSV export with automated metadata deduplication
-  - [X] Added support for Bulk ZIP uploads and Folder selection mode
-  
-  ### Acceptance Criteria Met:
-  
-  - [X] Sequential queue handles 500+ images reliably
-  - [X] Frontend re-syncs state after refresh or server restart
-  - [X] Redundant AI outputs are cleaned before file generation
-  
-## Phase 4 - Advanced Features & Scaling (Upcoming)
-- [ ] Implement multi-model orchestration (e.g., CLIP + FastVLM)
-- [ ] Add vector search integration for duplicate image detection
-- [ ] Build a more comprehensive prompt engineering workbench
-
+## Phase 5: Reliability & Advanced Research (Incoming)
+- [ ] **KV Cache Control**: Investigate manual KV cache invalidation to prevent cross-image memory "contamination" during long batch jobs.
+- [ ] **Constrained Decoding**: Research logit processors to force JSON schema adherence at the inference level (Guidance/Outlines equivalent for Transformers.js).
+- [ ] **Model Orchestration**: CLIP + FastVLM consensus for high-accuracy zero-shot classification.
+- [ ] **Performance Audit**: Quantization impact analysis (Q4 vs FP16) on classification precision.
+- [ ] **Prompt Workbench**: Dynamic prompt testing environment for A/B testing output quality.

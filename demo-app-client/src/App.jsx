@@ -12,6 +12,7 @@ export default function App() {
   const [singleImage, setSingleImage] = useState(null);
   const [singlePreview, setSinglePreview] = useState(null);
   const [singleResult, setSingleResult] = useState("");
+  const [singleGT, setSingleGT] = useState(null);
   const [singleLoading, setSingleLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -67,11 +68,13 @@ export default function App() {
       setSingleImage(files[0]);
       setSinglePreview(URL.createObjectURL(files[0]));
       setSingleResult("");
+      setSingleGT(null);
       setImages([]);
     } else {
       setImages(files);
       setSinglePreview(null);
       setSingleImage(null);
+      setSingleGT(null);
     }
   };
 
@@ -82,6 +85,7 @@ export default function App() {
     setSingleLoading(true);
     setError("");
     setSingleResult("");
+    setSingleGT(null);
 
     const formData = new FormData();
     formData.append("image", singleImage);
@@ -96,6 +100,7 @@ export default function App() {
       if (!response.ok) throw new Error("Analysis failed");
       const result = await response.json();
       setSingleResult(result.description || "No output");
+      setSingleGT(result.gt);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -130,38 +135,142 @@ export default function App() {
   };
 
   const extractJSON = (text) => {
-    const match = text.match(/\{[\s\S]*\}/);
-    if (match) {
-      try { return JSON.parse(match[0]); } catch { }
+    const jsonMatch = text.match(/\{[\s\S]*\}/) || text.match(/\{[\s\S]*/);
+    if (jsonMatch) {
+      let rawJson = jsonMatch[0];
+      
+      const tryParse = (str) => {
+        try { return JSON.parse(str); } catch (e) { return null; }
+      };
+
+      // 1. Try standard parse
+      let parsed = tryParse(rawJson);
+      if (parsed) return parsed;
+
+      // 2. Heuristic repair
+      let repaired = rawJson.trim();
+      
+      // Fix unclosed quotes in property values
+      // Find the last instance of [ "value and check if it's unclosed
+      if ((repaired.match(/"/g) || []).length % 2 !== 0) {
+        repaired += '"';
+      }
+
+      // Fix dangling commas before closing characters
+      repaired = repaired.replace(/,\s*([\}\]])/g, '$1');
+
+      // Recursively close brackets and braces
+      const balance = (str, openChar, closeChar) => {
+        const count = (str.match(new RegExp(`\\${openChar}`, 'g')) || []).length - 
+                      (str.match(new RegExp(`\\${closeChar}`, 'g')) || []).length;
+        return str + closeChar.repeat(Math.max(0, count));
+      };
+
+      repaired = balance(repaired, '[', ']');
+      repaired = balance(repaired, '{', '}');
+
+      return tryParse(repaired);
     }
     return null;
   };
 
+  const humanize = (str) => {
+    if (!str) return "";
+    return str.toString()
+      .trim()
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, l => l.toUpperCase());
+  };
+
   const renderContent = (text) => {
     const data = extractJSON(text);
-    if (!data) return <p>{text}</p>;
+    if (!data) return <p style={{ fontSize: '14px', lineHeight: '1.6', color: '#334155' }}>{text}</p>;
 
     const isBlank = (val) => {
       if (val === null || val === undefined) return true;
-      if (typeof val === "string") return val.trim() === "" || ["n/a", "none"].includes(val.toLowerCase());
+      if (typeof val === "string") return val.trim() === "" || ["n/a", "none", "unknown"].includes(val.toLowerCase());
       return Array.isArray(val) ? val.length === 0 : false;
     };
 
     const entries = [];
     for (const [k, v] of Object.entries(data)) {
         if (isBlank(v)) continue;
-        const label = k.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
-        entries.push({ label, value: Array.isArray(v) ? v.join(", ") : v.toString() });
+        const label = humanize(k);
+        
+        const formatValue = (val) => {
+          if (val === null || val === undefined) return "";
+          if (typeof val === 'object') {
+            if (val.text) return humanize(val.text);
+            // Join all non-object values (e.g. type + color)
+            return Object.values(val)
+              .filter(innerV => typeof innerV !== 'object')
+              .map(innerV => humanize(innerV))
+              .join(" ");
+          }
+          return humanize(val);
+        };
+
+        let value = "";
+        if (Array.isArray(v)) {
+          value = v.map(item => formatValue(item)).join(", ");
+        } else {
+          value = formatValue(v);
+        }
+        entries.push({ label, value: value.toString() });
     }
 
     return (
-      <div className="result-grid">
-        {entries.map((e, i) => (
-          <div key={i} style={{ marginBottom: '8px' }}>
-            <span style={{ fontWeight: 600, color: '#64748b', fontSize: '12px', marginRight: '6px' }}>{e.label}:</span>
-            <span style={{ fontSize: '13px' }}>{e.value}</span>
-          </div>
-        ))}
+      <div className="metadata-table-container">
+        <table className="modern-table">
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>Detected Attribute</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((e, i) => (
+              <tr key={i}>
+                <td className="row-label">{e.label}</td>
+                <td className="row-value">{e.value}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const renderGTComparison = () => {
+    if (!singleGT) return null;
+
+    return (
+      <div className="gt-panel-v2">
+        <h3 className="section-title">Benchmark Validation</h3>
+        <table className="modern-table gt-table">
+          <thead>
+            <tr>
+              <th>Dimension</th>
+              <th>Reference (GT)</th>
+              <th>VLM Prediction</th>
+              <th style={{ textAlign: 'center' }}>Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(singleGT).map(([key, data], i) => (
+              <tr key={i}>
+                <td className="row-label">{humanize(key)}</td>
+                <td>{humanize(data.gt)}</td>
+                <td>{humanize(data.vlm)}</td>
+                <td style={{ textAlign: 'center' }}>
+                  <span className={`status-pill ${data.match ? 'match' : 'mismatch'}`}>
+                    {data.match ? 'Match' : 'Diff'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     );
   };
@@ -218,7 +327,7 @@ export default function App() {
                 <button 
                   onClick={handleSingleUpload} 
                   disabled={singleLoading} 
-                  className="primary-btn" 
+                  className="btn btn-primary" 
                   style={{ width: '100%', marginTop: '20px' }}
                 >
                   {singleLoading ? 'AI Analyzing...' : 'Deep Analysis'}
@@ -226,13 +335,13 @@ export default function App() {
               </div>
             )}
 
-            {images.length > 0 && (
+            {images.length > 0 && !singleImage && (
               <div className="batch-controls">
                 <p style={{ fontWeight: 600, fontSize: '13px' }}>{images.length} Images Ready</p>
                 <button 
                   onClick={startBatchProcessing} 
                   disabled={uploading || processing} 
-                  className="primary-btn" 
+                  className="btn btn-primary" 
                   style={{ width: '100%', marginTop: '10px' }}
                 >
                   {uploading ? 'Uploading...' : 'Launch Batch Analysis'}
@@ -242,17 +351,17 @@ export default function App() {
 
             <div style={{ marginTop: '30px', borderTop: '1px solid #e2e8f0', paddingTop: '20px' }}>
                 <h3 style={{ fontSize: '14px', marginBottom: '10px' }}>Operation Queue</h3>
-                <QueueDisplay isProcessing={processing} resultCount={results.length} />
+                <QueueDisplay />
             </div>
           </div>
 
-          <div className="panel">
+          <div className="panel central-panel">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <h2>Analysis Output</h2>
                 {results.length > 0 && (
                   <button 
                     onClick={() => window.location.href='/batch-results?format=csv'}
-                    className="secondary-btn"
+                    className="btn btn-secondary"
                     style={{ fontSize: '11px', padding: '6px 12px' }}
                   >
                     Export Batch CSV ({results.length})
@@ -265,6 +374,7 @@ export default function App() {
                 <div className="result-card" style={{ border: '2px solid #070707' }}>
                    <h3>Active Deep-Dive</h3>
                    {renderContent(singleResult)}
+                   {renderGTComparison()}
                 </div>
               )}
 
