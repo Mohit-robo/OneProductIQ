@@ -145,7 +145,7 @@ test_images/
 ml-fastvlm/
 *.json
 
-caveman/
+caveman/*
 tmp/
 triton_server_test/checkpoints/
 

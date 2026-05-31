@@ -3,7 +3,7 @@
 ![UI Demo](./architecture_planning/assets/UI_Demo.png)
 
 ## Overview
-**OneProductIQ** is a high-performance system designed for bulk product metadata enrichment and automated catalog verification. It transforms raw product images into structured, clean, and benchmarked data using a quantized **FastVLM-0.5B-ONNX** model running on **CUDA**.
+**OneProductIQ** is a high-performance system designed for bulk product metadata enrichment and automated catalog verification. It transforms raw product images into structured, clean, and benchmarked data using a quantized **Qwen3-VL-2B** model running on **CUDA**.
 
 The system supports two distinct workflows:
 - **Deep Analysis**: A precise single-image deep dive with side-by-side **Ground Truth (GT)** verification.
@@ -31,7 +31,7 @@ The system supports two distinct workflows:
 |-------|----------------|------------|
 | **Frontend** | React-driven UI with hybrid analysis modes. Features a premium Metadata Table and Benchmark Validation panel. | `demo-app-client/src/App.jsx` |
 | **Backend** | Sequential image queue with integrated **Ground Truth** mapping and self-healing JSON extraction. | `demo-app/server.cjs` |
-| **ML Model** | FastVLM-0.5B-ONNX with deterministic inference tuned for zero-hallucination structured output. | Integrated via `@huggingface/transformers` |
+| **ML Model** | Qwen3-VL-2B with deterministic inference tuned for zero-hallucination structured output. | Integrated via `@huggingface/transformers` |
 
 ---
 

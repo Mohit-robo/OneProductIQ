@@ -99,7 +99,12 @@ export default function App() {
 
       if (!response.ok) throw new Error("Analysis failed");
       const result = await response.json();
-      setSingleResult(result.description || "No output");
+      
+      const contentStr = result.metadata 
+        ? JSON.stringify(result.metadata, null, 2) 
+        : (result.description || "No output");
+        
+      setSingleResult(contentStr);
       setSingleGT(result.gt);
     } catch (err) {
       setError(err.message);
