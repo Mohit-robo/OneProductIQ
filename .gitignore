@@ -143,6 +143,7 @@ app/FastVLM/model
 node_modules/
 test_images/
 ml-fastvlm/
+dataset/
 *.json
 
 caveman/*
