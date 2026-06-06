@@ -1,0 +1,37 @@
+# ── API Framework ────────────────────────────────────────────────────────────
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.12        # for file upload support
+
+# ── Data Validation ──────────────────────────────────────────────────────────
+pydantic==2.13.2
+pydantic-settings==2.14.1        # for Settings class with env var loading
+
+# ── Databases ────────────────────────────────────────────────────────────────
+pymongo==4.9                # MongoDB async-compatible driver
+motor==3.6.0                    # Async MongoDB driver built on pymongo
+chromadb==0.6.3                 # ChromaDB client
+
+# ── Embeddings ───────────────────────────────────────────────────────────────
+sentence-transformers==5.5.0    # Text embeddings (all-MiniLM-L6-v2)
+transformers==5.8.1
+tokenizers==0.22.2
+
+# ── Agentic / LLM ────────────────────────────────────────────────────────────
+langchain
+langchain-core
+langchain-community
+langgraph
+langchain-groq           # Groq API integration
+langchain-google-genai   # Gemini API integration
+langsmith                # LangSmith tracing
+langgraph-cli[inmem]
+langchain-openai
+
+# ── HTTP Client (for calling VLM service) ─────────────────────────────────
+httpx==0.28.1
+
+# ── Utilities ────────────────────────────────────────────────────────────────
+python-dotenv==1.0.1
+pillow==11.1.0                  # Image processing
+ollama

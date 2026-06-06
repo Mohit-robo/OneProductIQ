@@ -51,17 +51,14 @@ OneProductIQ/
 ├── backend/
 │   ├── Dockerfile
 │   ├── main.py                 (FastAPI + agent integration)
-│   ├── models/
-│   │   ├── product.py         (ProductMetadata schema)
-│   │   ├── agent_state.py     (AgentState definition)
-│   │   └── cart.py
-│   ├── services/
-│   │   ├── rag_search.py      (ChromaDB search)
-│   │   ├── vlm_inference.py   (Qwen-VL API calls)
-│   │   ├── agent.py           (LangGraph definition)
-│   │   └── tools.py           (Tool definitions)
-│   ├── data/
-│   │   └── ingest_products.py (Batch VLM extraction)
+│   ├── search_engine.py        (ChromaDB semantic search engine)
+│   ├── src/                    (Core backend logic)
+│   │   ├── config.py           (Pydantic settings)
+│   │   ├── schemas.py          (Product metadata & API schemas)
+│   │   ├── ingest_products.py  (Batch VLM/LLM extraction pipeline)
+│   │   ├── sync_chroma.py      (MongoDB to ChromaDB synchronization)
+│   │   ├── vlm_wrapper.py      (Qwen-VL local API client)
+│   │   └── llm_wrapper.py      (Gemini LLM client for structured parsing)
 │   └── requirements.txt
 ├── services/
 │   └── vlm/
@@ -95,7 +92,7 @@ cd OneProductIQ
 docker-compose up --build
 
 # 3. Ingest sample products (one-time)
-docker exec fastapi python data/ingest_products.py --dir /data/products
+docker exec fastapi python src/ingest_products.py --dir /data/products
 
 # 4. Test agent
 curl -X POST http://localhost:8000/chat \

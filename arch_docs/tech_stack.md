@@ -24,10 +24,10 @@ User: "Show me red cotton kurtas under ₹500"
 User: uploads a sneaker photo
         │
         ▼
-   VLM Service (Qwen-VL:2B) → generates image embedding
+   VLM Service (Ollama Qwen3-VL) → generates image embedding
         │
         ▼
-   ChromaDB → cosine similarity search on image_embeddings
+   ChromaDB → cosine similarity search on text_embeddings
         │
         ▼
    Retrieve top-K product_ids from ChromaDB metadata

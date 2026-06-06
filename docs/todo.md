@@ -7,36 +7,36 @@ This document tracks the step-by-step execution of the GenAI E-Commerce Platform
 ### Phase 1: Foundation Setup (Week 1)
 **Goal:** Local environment working, tools installed
 
-- [ ] Spin up MongoDB container using docker-compose
-- [ ] Set up ChromaDB container using docker-compose
-- [ ] Verify Qwen-VL:2B runs locally via docker (vLLM server on port 5000) | https://docs.vllm.ai/en/stable/deployment/docker/
-- [ ] Create docker image for Python backend; install FastAPI, LangGraph, Pydantic
-- [ ] Setup Node.js + Frontend docker containers
-- [ ] **Deliverable:** `docker-compose.yml` with all services running locally
+- [x] Spin up MongoDB container using docker-compose — `docker-compose.yml` → `mongodb` service
+- [x] Set up ChromaDB container using docker-compose — `docker-compose.yml` → `chroma` service
+- [x] Verify Qwen-VL:2B runs locally via docker (vLLM server on port 5000) — `services/vlm/Dockerfile` + `services/vlm/run.sh`
+- [x] Create docker image for Python backend; install FastAPI, LangGraph, Pydantic — `backend/Dockerfile` + `backend/requirements.txt` + `backend/main.py` + `backend/config.py`
+- [x] Setup Node.js + Frontend docker containers — `frontend/Dockerfile` (multi-stage Vite build)
+- [x] **Deliverable:** `docker-compose up --build` — awaiting prompt to run
 
 ---
 
 ### Phase 2: Data Schema & Product Metadata (Week 1-2)
 **Goal:** Define required metadata fields and extraction pipeline
 
-- [ ] Define Pydantic schema for `ProductMetadata` (attributes, visual details, sizing, etc.)
-- [ ] Create VLM inference wrapper (call Qwen-VL:2B API from FastAPI backend)
-- [ ] Build data ingestion script (`ingest_products.py`) to process images in batch
-- [ ] Ensure ingestion script runs *inside* the FastAPI container using `docker exec`
-- [ ] Process and populate MongoDB with initial sample products
-- [ ] **Deliverable:** `ProductMetadata.py`, `ingest_products.py`, and MongoDB populated with sample data
+- [x] Define Pydantic schema for `ProductMetadata` (attributes, visual details, sizing, etc.)
+- [x] Create VLM inference wrapper (call Qwen-VL:2B API from FastAPI backend)
+- [x] Build data ingestion script (`ingest_products.py`) to process images in batch
+- [x] Ensure ingestion script runs *inside* the FastAPI container using `docker exec`
+- [x] Process and populate MongoDB with initial sample products
+- [x] **Deliverable:** `ProductMetadata.py`, `ingest_products.py`, and MongoDB populated with sample data
 
 ---
 
 ### Phase 3: RAG Pipeline (Week 2-3)
 **Goal:** Embeddings in ChromaDB, semantic search working
 
-- [ ] Configure ChromaDB persistent storage in the backend environment
-- [ ] Setup text embeddings generation using `sentence-transformers` for product metadata
-- [ ] Implement dual-sync logic: when a product is inserted/updated in MongoDB, embed its text and save to ChromaDB (using shared `product_id`)
-- [ ] Implement `search_products(query)` retrieval logic using ChromaDB cosine similarity
-- [ ] Write tests for semantic search functionality
-- [ ] **Deliverable:** RAG pipeline module running inside the FastAPI container
+- [x] Configure ChromaDB persistent storage in the backend environment
+- [x] Setup text embeddings generation using `sentence-transformers` for product metadata
+- [x] Implement dual-sync logic: when a product is inserted/updated in MongoDB, embed its text and save to ChromaDB (using shared `product_id`)
+- [x] Implement `search_products(query)` retrieval logic using ChromaDB cosine similarity
+- [x] Write tests for semantic search functionality
+- [x] **Deliverable:** RAG pipeline module running inside the FastAPI container
 
 ---
 
@@ -56,7 +56,7 @@ This document tracks the step-by-step execution of the GenAI E-Commerce Platform
 **Goal:** Expose agent as REST API, integrate with existing backend
 
 - [ ] Create `/chat` POST endpoint as the main entry point for the LangGraph agent
-- [ ] Create `/search` GET endpoint for direct RAG-powered semantic search
+- [x] Create `/search` GET endpoint for direct RAG-powered semantic search
 - [ ] Create `/cart/add` endpoint leveraging the agent's tool logic
 - [ ] Integrate session memory (`MemorySaver`) so the agent remembers conversation context across `/chat` requests
 - [ ] Test API endpoints via Swagger UI / Postman

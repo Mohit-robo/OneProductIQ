@@ -1,0 +1,125 @@
+version: "3.8"
+
+# All services share this internal network so they can reach each other by service name.
+networks:
+  oneproductiq:
+    driver: bridge
+
+volumes:
+  mongo_data:
+  chroma_data:
+
+services:
+
+  # ── 1. MongoDB ────────────────────────────────────────────────────────────────
+  mongodb:
+    image: mongo:7
+    container_name: oneproductiq_mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - oneproductiq
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USER:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASS:-secret123}
+    healthcheck:
+      test: [ "CMD", "mongosh", "-u", "$${MONGO_INITDB_ROOT_USERNAME}", "-p", "$${MONGO_INITDB_ROOT_PASSWORD}", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── 1.5 Mongo Express (Web GUI for MongoDB) ──────────────────────────────────
+  mongo-express:
+    image: mongo-express:latest
+    container_name: oneproductiq_mongo_express
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=${MONGO_USER:-admin}
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=${MONGO_PASS:-secret123}
+      - ME_CONFIG_MONGODB_URL=mongodb://${MONGO_USER:-admin}:${MONGO_PASS:-secret123}@mongodb:27017/?authSource=admin
+      - ME_CONFIG_BASICAUTH=false
+    networks:
+      - oneproductiq
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  # ── 2. ChromaDB ───────────────────────────────────────────────────────────────
+  chroma:
+    image: chromadb/chroma:0.6.3
+    container_name: oneproductiq_chroma
+    restart: unless-stopped
+    ports:
+      - "8288:8000" # chroma listens on 8000 internally; mapped to 8288 on host
+    volumes:
+      - chroma_data:/chroma/chroma
+    networks:
+      - oneproductiq
+    # No healthcheck: chromadb image has no curl/wget/python on PATH.
+    # The fastapi backend uses retry logic on startup.
+
+    # ── 4. FastAPI Backend ────────────────────────────────────────────────────────
+  fastapi:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: oneproductiq_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      chroma:
+        condition: service_started # chroma has no healthcheck; backend retries on connect
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - oneproductiq
+    environment:
+      - MONGODB_URL=mongodb://${MONGO_USER:-admin}:${MONGO_PASS:-secret123}@mongodb:27017/?authSource=admin
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
+      - VLM_URL=http://host.docker.internal:11434/v1
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY}
+      - LANGCHAIN_TRACING_V2=true
+      - LANGCHAIN_PROJECT=OneProductIQ
+    volumes:
+      # Mount source code for live-reloading during development
+      - ./backend:/app
+      # Mount utility scripts
+      - ./scripts:/scripts
+      # Mount product image data into the container for the ingestion script
+      - ./data/products:/data/products:ro
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── 5. Frontend (React / Node.js) ─────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: oneproductiq_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      fastapi:
+        condition: service_healthy
+    networks:
+      - oneproductiq
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    volumes:
+      # Mount source code for live-reloading during development
+      - ./frontend:/app
