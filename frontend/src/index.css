@@ -16,27 +16,27 @@
   --text-primary: #f3f4f6;
   --text-secondary: #9ca3af;
   --text-muted: #6b7280;
-  
+
   --accent-blue: #3b82f6;
   --accent-purple: #8b5cf6;
   --accent-pink: #ec4899;
   --accent-gradient: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%);
   --accent-gradient-hover: linear-gradient(135deg, #4f46e5 0%, #a855f7 50%, #f43f5e 100%);
-  
+
   --success: #10b981;
   --error: #ef4444;
   --warning: #f59e0b;
-  
+
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.4);
   --shadow-glow: 0 0 20px rgba(59, 130, 246, 0.15);
-  
+
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 18px;
   --radius-full: 9999px;
-  
+
   --transition-fast: 0.15s ease;
   --transition-normal: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 0.5s cubic-bezier(0.4, 0, 0.2, 1);
@@ -58,7 +58,12 @@ body {
   min-height: 100vh;
 }
 
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   font-family: var(--font-display);
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -142,7 +147,8 @@ h1, h2, h3, h4, h5, h6 {
   cursor: pointer;
 }
 
-.nav-link:hover, .nav-link.active {
+.nav-link:hover,
+.nav-link.active {
   color: var(--text-primary);
   background: rgba(255, 255, 255, 0.05);
 }
@@ -333,8 +339,15 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 @keyframes slideDown {
-  from { opacity: 0; transform: translateY(-10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .preview-thumbnail-container {
@@ -657,8 +670,15 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 @keyframes popIn {
-  from { opacity: 0; transform: scale(0.95) translateY(20px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .chat-header {
@@ -712,9 +732,20 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 @keyframes pulse {
-  0% { transform: scale(0.9); opacity: 0.6; }
-  50% { transform: scale(1.2); opacity: 1; }
-  100% { transform: scale(0.9); opacity: 0.6; }
+  0% {
+    transform: scale(0.9);
+    opacity: 0.6;
+  }
+
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(0.9);
+    opacity: 0.6;
+  }
 }
 
 .chat-messages {
@@ -738,8 +769,15 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 @keyframes msgFadeIn {
-  from { opacity: 0; transform: translateY(5px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .chat-message.bot {
@@ -875,7 +913,9 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .empty-state {

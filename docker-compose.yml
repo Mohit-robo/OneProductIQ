@@ -26,7 +26,7 @@ services:
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_USER:-admin}
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASS:-secret123}
     healthcheck:
-      test: [ "CMD", "mongosh", "-u", "$${MONGO_INITDB_ROOT_USERNAME}", "-p", "$${MONGO_INITDB_ROOT_PASSWORD}", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping')" ]
+      test: ["CMD-SHELL", "mongosh -u $$MONGO_INITDB_ROOT_USERNAME -p $$MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin --eval \"db.adminCommand('ping')\""]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -74,7 +74,7 @@ services:
       - "8000:8000"
     depends_on:
       mongodb:
-        condition: service_healthy
+        condition: service_started
       chroma:
         condition: service_started # chroma has no healthcheck; backend retries on connect
     extra_hosts:
@@ -96,8 +96,10 @@ services:
       - ./backend:/app
       # Mount utility scripts
       - ./scripts:/scripts
-      # Mount product image data into the container for the ingestion script
+      # Mount product image data into the container for the ingestion script (read-only)
       - ./data/products:/data/products:ro
+      # Writable mount so /upload endpoint can save images for browser access
+      - ./data/products/uploads:/data/products/uploads
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
       interval: 10s
@@ -123,3 +125,7 @@ services:
     volumes:
       # Mount source code for live-reloading during development
       - ./frontend:/app
+      # Mount product images so Nginx can serve them directly to the browser
+      - ./data/products:/usr/share/nginx/html/products:ro
+      # Writable uploads folder served at /products/uploads/
+      - ./data/products/uploads:/usr/share/nginx/html/products/uploads

@@ -28,9 +28,14 @@ class Settings(BaseSettings):
     vlm_url: str = "http://host.docker.internal:11434/v1"
     vlm_model_name: str = "qwen3-vl:2b"
 
-    # ── LLM API keys ─────────────────────────────────────────────────────────
+    # ── LLM Models & Keys ────────────────────────────────────────────────────
     groq_api_key: str
+    groq_model_name: str = "groq:qwen/qwen3-32b"
     gemini_api_key: str
+    gemini_model_name: str = "google_genai:gemma-4-31b-it" 
+
+    # ── Embedding Model ──────────────────────────────────────────────────────
+    embedding_model_name: str = "all-MiniLM-L6-v2"
 
     # ── LangSmith tracing ─────────────────────────────────────────────────────
     langchain_api_key: str

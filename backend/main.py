@@ -11,15 +11,17 @@ import random
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, UploadFile, File, Query
+from fastapi import FastAPI, UploadFile, File, Query, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from PIL import Image
 
 from src.config import Settings
 from search_engine import hybrid_search
+from src.agent import build_agent_graph
 
 settings = Settings()
+agent_app = None
 
 
 # ── Lifespan (startup / shutdown) ────────────────────────────────────────────
@@ -56,6 +58,20 @@ async def lifespan(app: FastAPI):
             print("  ✅ VLM service reachable")
     except Exception as e:
         print(f"  ⚠️  VLM service not reachable yet (may still be loading model): {e}")
+
+    # Warm up search engine resources
+    print("  ⏳ Warming up search engine resources (models & clients)...")
+    from search_engine import preload_resources
+    import asyncio
+    await asyncio.to_thread(preload_resources)
+    print("  ✅ Search engine resources warmed up")
+
+    # Warm up the agent graph and LLM tools
+    print("  ⏳ Warming up agent resources...")
+    from src.agent import build_agent_graph
+    global agent_app
+    agent_app = await asyncio.to_thread(build_agent_graph)
+    print("  ✅ Agent resources warmed up")
 
     print("🟢 Startup complete. API ready.")
     yield
@@ -99,16 +115,9 @@ def search_products(
 ):
     """Search products using ChromaDB hybrid semantic search."""
     try:
-        if not q:
-            # If no query, just return a few random items from mongo
-            from pymongo import MongoClient
-            mongo_client = MongoClient(settings.mongodb_url)
-            db = mongo_client[settings.mongodb_db]
-            results = list(db.products.find().limit(10))
-            for r in results:
-                if "_id" in r:
-                    r["_id"] = str(r["_id"])
-            return results
+        if not q.strip():
+            # Empty query → return nothing; storefront starts empty until user searches
+            return []
             
         filters = {}
         if max_price is not None:
@@ -116,9 +125,6 @@ def search_products(
         if brand:
             filters["brand"] = brand
             
-        # Call our robust hybrid search engine!
-        # This endpoint is defined as `def` instead of `async def`, 
-        # so FastAPI automatically runs it in a threadpool to avoid blocking the event loop.
         results = hybrid_search(q, top_k=10, filters=filters)
         return results
     except Exception as e:
@@ -130,137 +136,235 @@ class ChatRequest(BaseModel):
     user_id: str
     message: str
 
+class CartAddRequest(BaseModel):
+    user_id: str
+    sku: str
+
+@app.post("/cart/add", tags=["shop"])
+async def add_to_cart_endpoint(req: CartAddRequest):
+    """Add a product to the user's cart in the agent state."""
+    import asyncio
+    try:
+        global agent_app
+        if agent_app is None:
+            agent_app = build_agent_graph()
+
+        config = {"configurable": {"thread_id": req.user_id}}
+        state_history = await asyncio.to_thread(agent_app.get_state, config)
+        
+        if not state_history.values:
+            await asyncio.to_thread(agent_app.update_state, config, {"cart": [req.sku]})
+        else:
+            cart = state_history.values.get("cart", [])
+            if req.sku not in cart:
+                cart.append(req.sku)
+                await asyncio.to_thread(agent_app.update_state, config, {"cart": cart})
+                
+        return {"status": "success", "message": f"Added {req.sku} to cart"}
+    except Exception as e:
+        print(f"Cart Add Error: {e}")
+        return {"status": "error", "message": str(e)}
+
 
 @app.post("/chat", tags=["shop"])
 async def chat_with_agent(req: ChatRequest):
-    """Chat endpoint supporting agentic product search queries."""
-    message_lower = req.message.lower()
-    matched_products = []
-
+    """Chat endpoint supporting LangGraph agent queries."""
+    from langchain_core.messages import HumanMessage, ToolMessage
+    import ast
+    import asyncio
+    
     try:
-        from motor.motor_asyncio import AsyncIOMotorClient
-        mongo = AsyncIOMotorClient(settings.mongodb_url)
-        db = mongo[settings.mongodb_db]
+        global agent_app
+        if agent_app is None:
+            agent_app = build_agent_graph()
+
+        # Construct the thread configuration for session memory
+        config = {"configurable": {"thread_id": req.user_id}}
+
+        # Check if we have an existing state in checkpointer
+        state_history = await asyncio.to_thread(agent_app.get_state, config)
+
+        if not state_history.values:
+            # First turn: Initialize with defaults
+            initial_state = {
+                "messages": [HumanMessage(content=req.message)],
+                "cart": [],
+                "recommendations": []
+            }
+        else:
+            # Follow-up turns: Only send the new message to avoid resetting state variables
+            initial_state = {
+                "messages": [HumanMessage(content=req.message)]
+            }
         
-        words = req.message.strip().split()
-        if words:
-            clauses = []
-            for w in words:
-                if len(w) > 2:
-                    clauses.append({"brand": {"$regex": w, "$options": "i"}})
-                    clauses.append({"product_type": {"$regex": w, "$options": "i"}})
-                    clauses.append({"primary_color": {"$regex": w, "$options": "i"}})
-            
-            if clauses:
-                query = {"$or": clauses}
-                cursor = db.products.find(query)
-                matched_products = await cursor.to_list(length=3)
-                for p in matched_products:
-                    if "_id" in p:
-                        p["_id"] = str(p["_id"])
+        # Invoke the LangGraph agent with checkpointer config
+        result = await asyncio.to_thread(agent_app.invoke, initial_state, config)
+        
+        # The last message is the AI response
+        ai_msg = result["messages"][-1]
+        
+        # Extract products returned by the `search_store` or `get_recommendations` tools
+        products = []
+        for msg in result["messages"]:
+            if isinstance(msg, ToolMessage) and msg.name in ["search_store", "get_recommendations"]:
+                try:
+                    # LangChain stringifies tool outputs. We use literal_eval to parse the Python list back to dicts.
+                    tool_results = ast.literal_eval(msg.content)
+                    if isinstance(tool_results, list):
+                        products.extend(tool_results)
+                except Exception:
+                    pass
+        
+        # Extract text from content blocks if the model returns a list (e.g., Gemini thinking/reasoning blocks)
+        ai_response_text = ""
+        if isinstance(ai_msg.content, list):
+            for block in ai_msg.content:
+                if isinstance(block, dict):
+                    if block.get("type") == "text":
+                        ai_response_text += block.get("text", "")
+                elif isinstance(block, str):
+                    ai_response_text += block
+        else:
+            ai_response_text = str(ai_msg.content)
+
+        return {
+            "response": ai_response_text.strip(),
+            "products": products[:5] # Send back the top 5 unique products found
+        }
     except Exception as e:
-        print(f"Chat API Error: {e}")
-        pass
+        print(f"Chat Agent Error: {e}")
+        return {
+            "response": f"Sorry, I encountered an error: {str(e)}",
+            "products": []
+        }
 
-    if any(g in message_lower for g in ["hi", "hello", "hey", "hola"]):
-        resp = "Hello! I am the OneProductIQ Assistant. I can help you find products, view specifications, or manage your cart. What are you looking for today?"
-    elif matched_products:
-        prod_names = ", ".join([f"{p['brand']} {p['product_type']}" for p in matched_products])
-        resp = f"I found some items that might interest you: {prod_names}. Let me know if you would like me to add any of these to your shopping bag!"
-    else:
-        resp = "I'm here to help you shop. Try asking for specific colors, brands, or clothing items (e.g., 'Do you have red shoes or denim jackets?')."
 
-    return {
-        "response": resp,
-        "products": matched_products
-    }
+@app.post("/analyze", tags=["shop"])
+async def analyze_image_for_search(image: UploadFile = File(...)):
+    """
+    Analyze an uploaded image using VLM + LLM and return structured metadata
+    for use as a search query. Does NOT persist anything to MongoDB or ChromaDB.
+    This is the endpoint used by the storefront search bar.
+    """
+    try:
+        import asyncio
+        from src.vlm_wrapper import get_visual_description_from_image
+        from src.llm_wrapper import parse_metadata_from_vision
+
+        contents = await image.read()
+        pil_img = Image.open(io.BytesIO(contents))
+
+        visual_desc = await asyncio.to_thread(get_visual_description_from_image, pil_img)
+        parsed_metadata = await asyncio.to_thread(parse_metadata_from_vision, f"Visual Description: {visual_desc}")
+        metadata = parsed_metadata.model_dump()
+
+        print(f"  /analyze: VLM described image as {metadata.get('product_type')} ({metadata.get('primary_color')})")
+        return {
+            "status": "success",
+            "metadata": metadata,
+            "visual_description": visual_desc,
+        }
+    except Exception as e:
+        print(f"  /analyze error: {e}")
+        return {"status": "error", "detail": str(e)}
 
 
 @app.post("/upload", tags=["ingest"])
-async def upload_and_process_image(image: UploadFile = File(...)):
-    """Upload product image to trigger VLM extraction (with high-quality fallbacks)."""
+
+async def upload_and_process_image(
+    image: UploadFile = File(...),
+    sku: str = Form(default=""),
+    extra_images: list[UploadFile] = File(default=[]),
+):
+    """Upload product image to trigger VLM extraction. Accepts optional SKU and extra catalogue images."""
     try:
         contents = await image.read()
         pil_img = Image.open(io.BytesIO(contents))
         
-        # In a real environment, we'd base64 encode and query the vLLM API:
-        # base64_image = base64.b64encode(contents).decode("utf-8")
-        # vlm_response = await call_vllm_service(base64_image)
+        import asyncio
+        from src.vlm_wrapper import get_visual_description_from_image
+        from src.llm_wrapper import parse_metadata_from_vision
         
-        # Let's perform smart mock extraction based on image properties or filenames
-        # to ensure the UI looks premium and works immediately!
-        filename = image.filename.lower()
+        # 1. Get visual description from VLM (Qwen-VL via Ollama)
+        visual_desc = await asyncio.to_thread(get_visual_description_from_image, pil_img)
         
-        # Default mock extraction structure
-        metadata = {
-            "product_type": "Apparel Item",
-            "brand": "UrbanClass",
-            "price": 55.0,
-            "primary_color": "Black",
-            "pattern": "Solid",
-            "fit": "Regular",
-            "occasions": ["casual wear", "work/office"],
-            "material_composition": "80% Cotton, 20% Polyester",
-            "care_instructions": "Machine wash warm"
-        }
+        # 2. Extract structured metadata from the visual description using Gemini
+        parsed_metadata = await asyncio.to_thread(parse_metadata_from_vision, f"Visual Description: {visual_desc}")
+        metadata = parsed_metadata.model_dump()
 
-        # Adapt mock data based on name keywords to feel responsive
-        if "shoe" in filename or "sneaker" in filename or "foot" in filename:
-            metadata.update({
-                "product_type": "Sneaker",
-                "brand": "AeroForce",
-                "price": 120.0,
-                "primary_color": "White",
-                "occasions": ["casual wear", "gym", "travel"],
-                "material_composition": "Mesh & Leather"
-            })
-        elif "kurta" in filename or "ethnic" in filename:
-            metadata.update({
-                "product_type": "Cotton Kurta",
-                "brand": "EthnicWear",
-                "price": 45.0,
-                "primary_color": "Red",
-                "pattern": "Embroidered",
-                "occasions": ["events", "casual wear", "work/office"],
-                "material_composition": "100% Cotton"
-            })
-        elif "jacket" in filename or "coat" in filename:
-            metadata.update({
-                "product_type": "Denim Jacket",
-                "brand": "RoughRoad",
-                "price": 85.0,
-                "primary_color": "Blue",
-                "pattern": "Textured",
-                "fit": "Oversized",
-                "occasions": ["casual wear", "travel"],
-                "material_composition": "Denim Cotton"
-            })
-        elif "chino" in filename or "pant" in filename:
-            metadata.update({
-                "product_type": "Slim Fit Chinos",
-                "brand": "UrbanClass",
-                "price": 60.0,
-                "primary_color": "Beige",
-                "fit": "Slim",
-                "occasions": ["work/office", "casual wear"],
-                "material_composition": "98% Cotton, 2% Spandex"
-            })
+        # Save the primary uploaded file to the writable volume
+        import os
+        import uuid
+        filename = f"{uuid.uuid4()}_{image.filename}"
+        upload_dir = "/data/products/uploads"
+        os.makedirs(upload_dir, exist_ok=True)
+        file_path = os.path.join(upload_dir, filename)
+        with open(file_path, "wb") as f:
+            f.write(contents)
+
+        image_path_url = f"/products/uploads/{filename}"
+        all_image_paths = [image_path_url]
+
+        # Save any extra catalogue images provided
+        for extra in (extra_images or []):
+            try:
+                extra_bytes = await extra.read()
+                if extra_bytes:
+                    extra_filename = f"{uuid.uuid4()}_{extra.filename}"
+                    extra_path = os.path.join(upload_dir, extra_filename)
+                    with open(extra_path, "wb") as ef:
+                        ef.write(extra_bytes)
+                    all_image_paths.append(f"/products/uploads/{extra_filename}")
+            except Exception as ex:
+                print(f"  Warning: could not save extra image {extra.filename}: {ex}")
 
         # Save to MongoDB
+        new_sku = f"PROD-{random.randint(100, 999)}"
+        mongo_id = None
         try:
             from motor.motor_asyncio import AsyncIOMotorClient
             mongo = AsyncIOMotorClient(settings.mongodb_url)
             db = mongo[settings.mongodb_db]
-            new_sku = f"PROD-{random.randint(100, 999)}"
             product_doc = {
-                "sku": new_sku,
+                "sku": sku.strip() if sku.strip() else new_sku,
                 **metadata,
-                "image_path": ""  # base64 or path
+                "visual_description": visual_desc,
+                "image_path": image_path_url,
+                "image_paths": all_image_paths,
             }
-            await db.products.insert_one(product_doc)
-            print(f"  Inserted processed product {new_sku} into MongoDB")
+            result = await db.products.insert_one(product_doc)
+            mongo_id = str(result.inserted_id)
+            print(f"  Inserted processed product {new_sku} into MongoDB (id={mongo_id})")
         except Exception as e:
             print(f"  Failed to save to MongoDB: {e}")
+
+        # Immediately embed the new product into ChromaDB so it is searchable
+        if mongo_id:
+            try:
+                import asyncio
+                from search_engine import get_chroma_collection, get_embedder
+                brand = metadata.get('brand') or 'Unknown'
+                product_type = metadata.get('product_type') or 'Unknown'
+                text_to_embed = f"{brand} {product_type}. {visual_desc}"
+                def _embed_and_upsert():
+                    emb = get_embedder().encode(text_to_embed).tolist()
+                    meta = {
+                        "sku": str(metadata.get("sku") or new_sku),
+                        "brand": brand,
+                        "product_type": product_type,
+                        "price": float(metadata.get("price") or 0.0),
+                        "primary_color": str(metadata.get("primary_color") or "Unknown"),
+                    }
+                    get_chroma_collection().upsert(
+                        ids=[mongo_id],
+                        documents=[text_to_embed],
+                        embeddings=[emb],
+                        metadatas=[meta]
+                    )
+                await asyncio.to_thread(_embed_and_upsert)
+                print(f"  Embedded {new_sku} into ChromaDB (id={mongo_id})")
+            except Exception as e:
+                print(f"  Failed to embed into ChromaDB: {e}")
 
         # Ground truth comparison simulator
         gt = {
@@ -272,8 +376,62 @@ async def upload_and_process_image(image: UploadFile = File(...)):
 
         return {
             "status": "success",
+            "mongo_id": mongo_id,
             "metadata": metadata,
-            "gt": gt
         }
     except Exception as e:
+        return {"status": "error", "detail": str(e)}
+
+
+@app.put("/product/{mongo_id}", tags=["ingest"])
+async def update_product_metadata(mongo_id: str, updated: dict):
+    """
+    Update a product's metadata in MongoDB and re-embed in ChromaDB.
+    Called from the Admin panel when the user confirms (with or without edits).
+    """
+    import asyncio
+    from bson import ObjectId
+    from motor.motor_asyncio import AsyncIOMotorClient
+    try:
+        mongo = AsyncIOMotorClient(settings.mongodb_url)
+        db = mongo[settings.mongodb_db]
+
+        # Strip internal fields the client should not overwrite
+        safe = {k: v for k, v in updated.items() if k not in ("_id",)}
+        result = await db.products.update_one(
+            {"_id": ObjectId(mongo_id)},
+            {"$set": safe}
+        )
+        if result.matched_count == 0:
+            return {"status": "error", "detail": "Product not found"}
+
+        # Re-fetch to embed the latest text
+        doc = await db.products.find_one({"_id": ObjectId(mongo_id)})
+        if doc:
+            from search_engine import get_chroma_collection, get_embedder
+            brand = str(doc.get("brand") or "Unknown")
+            product_type = str(doc.get("product_type") or "Unknown")
+            visual_desc = str(doc.get("visual_description") or "")
+            text = f"{brand} {product_type}. {visual_desc}"
+            def _reembed():
+                emb = get_embedder().encode(text).tolist()
+                meta = {
+                    "sku": str(doc.get("sku") or mongo_id),
+                    "brand": brand,
+                    "product_type": product_type,
+                    "price": float(doc.get("price") or 0.0),
+                    "primary_color": str(doc.get("primary_color") or "Unknown"),
+                }
+                get_chroma_collection().upsert(
+                    ids=[mongo_id],
+                    documents=[text],
+                    embeddings=[emb],
+                    metadatas=[meta]
+                )
+            await asyncio.to_thread(_reembed)
+            print(f"  Re-embedded product {mongo_id} in ChromaDB after admin update")
+
+        return {"status": "success", "updated": result.modified_count}
+    except Exception as e:
+        print(f"  /product update error: {e}")
         return {"status": "error", "detail": str(e)}

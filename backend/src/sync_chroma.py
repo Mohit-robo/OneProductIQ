@@ -50,12 +50,13 @@ def sync_mongodb_to_chroma():
         doc_id = str(p["_id"])
         
         # Metadata allows us to do exact keyword/price filtering inside ChromaDB
+        # We use `or` to handle cases where the key exists but is explicitly None in MongoDB
         meta = {
-            "sku": p.get("sku", "AUTO-GEN"),
-            "brand": p.get("brand", "Unknown"),
-            "product_type": p.get("product_type", "Unknown"),
-            "price": float(p.get("price", 0.0)),
-            "primary_color": p.get("primary_color", "Unknown")
+            "sku": str(p.get("sku") or "AUTO-GEN"),
+            "brand": str(p.get("brand") or "Unknown"),
+            "product_type": str(p.get("product_type") or "Unknown"),
+            "price": float(p.get("price") or 0.0),
+            "primary_color": str(p.get("primary_color") or "Unknown")
         }
 
         docs.append(text_to_embed)

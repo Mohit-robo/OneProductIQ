@@ -16,8 +16,6 @@ from config import Settings
 
 settings = Settings()
 
-
-
 # Connect to Ollama
 # Determine correct URL depending on whether we are running inside Docker or on the host
 if os.path.exists("/.dockerenv"):
@@ -59,7 +57,6 @@ def get_visual_description_from_image(image: Image.Image) -> str:
         response = client.post(f"{ollama_host}/api/chat", json=payload)
         response.raise_for_status()
         data = response.json()
-        print(data)
 
     return data["message"]["content"]
 

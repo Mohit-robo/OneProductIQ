@@ -1,9 +1,65 @@
 import React, { useState, useEffect } from "react";
 import { 
   Search, Image as ImageIcon, ShoppingBag, Plus, Upload, X,
-  CheckCircle, AlertCircle, RefreshCw, Sparkles, SlidersHorizontal, ArrowLeft
+  CheckCircle, AlertCircle, RefreshCw, Sparkles, SlidersHorizontal, ArrowLeft, ChevronLeft, ChevronRight
 } from "lucide-react";
 import ChatbotWidget from "./components/ChatbotWidget";
+
+const ImageCarousel = ({ product, altClass, customStyle }) => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  // Collect all valid images (fallback to image_path if no image_paths)
+  const images = (product.image_paths && product.image_paths.length > 0) 
+    ? product.image_paths 
+    : (product.image_path ? [product.image_path] : ["/products/placeholder.jpg"]);
+
+  const nextImage = (e) => {
+    e.stopPropagation();
+    setCurrentIndex((prev) => (prev + 1) % images.length);
+  };
+
+  const prevImage = (e) => {
+    e.stopPropagation();
+    setCurrentIndex((prev) => (prev - 1 + images.length) % images.length);
+  };
+
+  return (
+    <div style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", borderRadius: "inherit" }}>
+      <img 
+        src={images[currentIndex]} 
+        alt={product.product_type} 
+        className={altClass || "product-image"}
+        style={{ ...customStyle, width: "100%", height: "100%", objectFit: "cover" }}
+        onError={(e) => {
+          e.target.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300' fill='%231f2937'%3E%3Crect width='100%25' height='100%25'/%3E%3C/svg%3E";
+        }}
+      />
+      {images.length > 1 && (
+        <>
+          <button 
+            onClick={prevImage} 
+            style={{ position: "absolute", top: "50%", left: "8px", transform: "translateY(-50%)", background: "rgba(0,0,0,0.5)", color: "white", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "50%", width: "28px", height: "28px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", zIndex: 10, backdropFilter: "blur(4px)" }}
+            aria-label="Previous image"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <button 
+            onClick={nextImage} 
+            style={{ position: "absolute", top: "50%", right: "8px", transform: "translateY(-50%)", background: "rgba(0,0,0,0.5)", color: "white", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "50%", width: "28px", height: "28px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", zIndex: 10, backdropFilter: "blur(4px)" }}
+            aria-label="Next image"
+          >
+            <ChevronRight size={16} />
+          </button>
+          <div style={{ position: "absolute", bottom: "12px", left: "50%", transform: "translateX(-50%)", display: "flex", gap: "6px", zIndex: 10 }}>
+            {images.map((_, idx) => (
+              <div key={idx} style={{ width: idx === currentIndex ? "16px" : "6px", height: "6px", borderRadius: "3px", background: idx === currentIndex ? "#fff" : "rgba(255,255,255,0.4)", transition: "all 0.2s ease" }} />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("shop");
@@ -22,11 +78,33 @@ export default function App() {
   const [ingestLoading, setIngestLoading] = useState(false);
   const [ingestResult, setIngestResult] = useState(null);
   const [ingestError, setIngestError] = useState("");
+  const [recommendations, setRecommendations] = useState([]);
 
-  // Seed sample products if backend is empty
+  // Admin panel state
+  const [ingestSku, setIngestSku] = useState("");
+  const [extraImages, setExtraImages] = useState([]);        // extra File objects
+  const [extraPreviews, setExtraPreviews] = useState([]);    // extra object URLs
+  const [mongoId, setMongoId] = useState(null);             // ID returned by /upload
+  const [editableMeta, setEditableMeta] = useState(null);   // editable copy of metadata
+  const [saveStatus, setSaveStatus] = useState("");          // "saving"|"saved"|"error"|""
+
   useEffect(() => {
-    fetchProducts();
-  }, []);
+    if (selectedProduct) {
+      const query = `${selectedProduct.product_type} ${selectedProduct.primary_color || ""}`;
+      fetch(`/api/search?q=${encodeURIComponent(query)}&limit=4`)
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            setRecommendations(data.filter(p => p.sku !== selectedProduct.sku).slice(0, 4));
+          }
+        })
+        .catch(err => console.error("Failed to fetch recommendations", err));
+    } else {
+      setRecommendations([]);
+    }
+  }, [selectedProduct]);
+
+  // Storefront starts empty — products only appear after an explicit search
 
   const fetchProducts = async (query = "") => {
     setLoading(true);
@@ -38,11 +116,12 @@ export default function App() {
         const data = await res.json();
         setProducts(data);
       } else {
-        // Fallback mock data for beautiful demo
-        setProducts(getMockProducts());
+        console.error("Failed to fetch products:", res.statusText);
+        setProducts([]);
       }
     } catch (e) {
-      setProducts(getMockProducts());
+      console.error("Error fetching products:", e);
+      setProducts([]);
     } finally {
       setLoading(false);
     }
@@ -122,24 +201,32 @@ export default function App() {
   const handleSearchSubmit = async (e) => {
     e.preventDefault();
     if (searchImage) {
-      // Trigger visual VLM search
+      // Visual search: analyze image with VLM but do NOT persist to DB
       setLoading(true);
       const formData = new FormData();
       formData.append("image", searchImage);
       try {
-        const response = await fetch("/api/upload", {
+        const response = await fetch("/api/analyze", {
           method: "POST",
           body: formData
         });
         if (response.ok) {
           const data = await response.json();
-          // Filter products based on detected visual parameters
-          const color = data.metadata?.primary_color || "";
-          const type = data.metadata?.product_type || "";
-          fetchProducts(`${color} ${type}`);
+          if (data.status === "error") {
+            console.error("VLM Error:", data.detail);
+            alert(`VLM Analysis Failed: ${data.detail}`);
+            fetchProducts(searchText); // Fallback to just the text search
+          } else {
+            // Build query: combine user text + VLM-detected color + type
+            const color = data.metadata?.primary_color || "";
+            const type = data.metadata?.product_type || "";
+            const queryStr = [searchText, color, type].filter(Boolean).join(" ");
+            fetchProducts(queryStr);
+          }
         }
       } catch (err) {
-        console.error("Image upload failed:", err);
+        console.error("Image analysis failed:", err);
+        fetchProducts(searchText); // Fallback if network fails
       } finally {
         setLoading(false);
       }
@@ -164,26 +251,44 @@ export default function App() {
     if (!ingestFile) return;
     setIngestLoading(true);
     setIngestError("");
+    setMongoId(null);
+    setEditableMeta(null);
+    setSaveStatus("");
 
     const formData = new FormData();
     formData.append("image", ingestFile);
+    formData.append("sku", ingestSku.trim());
+    extraImages.forEach(f => formData.append("extra_images", f));
 
     try {
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: formData
-      });
-
-      if (!response.ok) {
-        throw new Error(`Server returned code ${response.status}`);
-      }
-
+      const response = await fetch("/api/upload", { method: "POST", body: formData });
+      if (!response.ok) throw new Error(`Server returned code ${response.status}`);
       const data = await response.json();
+      if (data.status === "error") throw new Error(data.detail);
       setIngestResult(data);
+      setMongoId(data.mongo_id || null);
+      // Seed editable fields from extracted metadata
+      setEditableMeta({ ...data.metadata });
     } catch (err) {
       setIngestError(err.message || "Failed to process image with VLM service");
     } finally {
       setIngestLoading(false);
+    }
+  };
+
+  const handleConfirmSave = async () => {
+    if (!mongoId || !editableMeta) return;
+    setSaveStatus("saving");
+    try {
+      const res = await fetch(`/api/product/${mongoId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editableMeta),
+      });
+      const data = await res.json();
+      setSaveStatus(data.status === "success" ? "saved" : "error");
+    } catch {
+      setSaveStatus("error");
     }
   };
 
@@ -260,14 +365,7 @@ export default function App() {
                 </button>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: "3rem" }}>
                   <div className="card-image-wrapper" style={{ borderRadius: "var(--radius-md)" }}>
-                    <img 
-                      src={selectedProduct.image_path || "/data/products/placeholder.jpg"} 
-                      alt={selectedProduct.product_type} 
-                      className="product-image"
-                      onError={(e) => {
-                        e.target.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400' fill='%231f2937'%3E%3Crect width='100%25' height='100%25'/%3E%3C/svg%3E";
-                      }}
-                    />
+                    <ImageCarousel product={selectedProduct} />
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
                     <div>
@@ -323,8 +421,31 @@ export default function App() {
                       <ShoppingBag size={20} /> Add to Shopping Bag
                     </button>
                   </div>
-                </div>
               </div>
+              
+              {/* Recommendations Section */}
+              {recommendations.length > 0 && (
+                <div style={{ marginTop: "3rem" }}>
+                  <h3 style={{ fontSize: "1.5rem", marginBottom: "1.5rem" }}>You Might Also Like</h3>
+                  <div className="product-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>
+                    {recommendations.map(prod => (
+                      <div key={prod.sku} className="product-card" onClick={() => setSelectedProduct(prod)}>
+                        <div className="card-image-wrapper">
+                          <ImageCarousel product={prod} />
+                        </div>
+                        <div className="card-content">
+                          <span className="product-brand">{prod.brand}</span>
+                          <h3 className="product-title" style={{ fontSize: "1rem" }}>{prod.product_type}</h3>
+                          <div className="product-footer">
+                            <span className="product-price">${prod.price}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
             ) : (
               /* Catalog Shop View */
               <>
@@ -357,11 +478,19 @@ export default function App() {
                         />
                         <label 
                           htmlFor="visual-search-upload" 
-                          className="icon-btn"
-                          title="Visual search upload"
-                          style={{ cursor: "pointer" }}
+                          title="Search by image"
+                          style={{ 
+                            cursor: "pointer", display: "flex", alignItems: "center", gap: "6px",
+                            padding: "6px 14px", borderRadius: "var(--radius-full)",
+                            background: searchImagePreview ? "rgba(99,102,241,0.18)" : "rgba(255,255,255,0.05)",
+                            border: `1px solid ${searchImagePreview ? "rgba(99,102,241,0.5)" : "rgba(255,255,255,0.08)"}`,
+                            color: searchImagePreview ? "#a5b4fc" : "var(--text-muted)",
+                            fontSize: "0.8rem", fontWeight: 600, transition: "all 0.2s",
+                            whiteSpace: "nowrap",
+                          }}
                         >
-                          <ImageIcon size={20} />
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 0 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                          {searchImagePreview ? "Image set" : "Photo"}
                         </label>
                         
                         <button className="search-btn" type="submit">
@@ -391,7 +520,9 @@ export default function App() {
                 <div className="catalog-section">
                   <div className="section-header">
                     <h2 className="section-title">Product Catalog</h2>
-                    <span className="results-count">{products.length} Products Found</span>
+                    <span className="results-count">
+                      {products.length === 1 ? "1 Product Found" : `${products.length} Products Found`}
+                    </span>
                   </div>
 
                   {loading ? (
@@ -401,8 +532,17 @@ export default function App() {
                   ) : products.length === 0 ? (
                     <div className="empty-state">
                       <SlidersHorizontal className="empty-icon" />
-                      <h3>No items matched your query</h3>
-                      <p>Try searching for color or product type keywords.</p>
+                      {searchText || searchImagePreview ? (
+                        <>
+                          <h3>No results found</h3>
+                          <p>Try different keywords, another image, or broaden your search.</p>
+                        </>
+                      ) : (
+                        <>
+                          <h3>Start exploring the catalogue</h3>
+                          <p>Type a keyword, upload a photo, or chat with the AI agent below.</p>
+                        </>
+                      )}
                     </div>
                   ) : (
                     <div className="product-grid">
@@ -413,14 +553,7 @@ export default function App() {
                           onClick={() => setSelectedProduct(prod)}
                         >
                           <div className="card-image-wrapper">
-                            <img 
-                              src={prod.image_path || "/data/products/placeholder.jpg"} 
-                              alt={prod.product_type} 
-                              className="product-image"
-                              onError={(e) => {
-                                e.target.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300' fill='%231f2937'%3E%3Crect width='100%25' height='100%25'/%3E%3C/svg%3E";
-                              }}
-                            />
+                            <ImageCarousel product={prod} />
                             <span className="card-badge">{prod.brand}</span>
                             <span className="card-price-tag">${prod.price}</span>
                           </div>
@@ -447,135 +580,138 @@ export default function App() {
             <div className="hero-section" style={{ padding: "2rem 1rem", marginBottom: "2rem" }}>
               <span className="glow-tag" style={{ border: "1px solid rgba(236, 72, 153, 0.3)", color: "#f472b6", background: "rgba(236, 72, 153, 0.08)" }}>VLM Extractor</span>
               <h1 className="hero-title" style={{ fontSize: "2.5rem" }}>Admin Ingestion Console</h1>
-              <p className="hero-subtitle">
-                Upload new catalog images to analyze and parse them using Qwen-VL. The output will be parsed into MongoDB attributes automatically.
-              </p>
+              <p className="hero-subtitle">Upload a product image, set a SKU, and optionally attach more catalogue images. VLM will extract metadata which you can edit before saving.</p>
             </div>
 
             <div className="ingest-grid">
+              {/* ── Left panel: upload form ── */}
               <div className="glass-panel" style={{ padding: "2rem" }}>
-                <h3 style={{ marginBottom: "1rem" }}>Image Upload</h3>
+                <h3 style={{ marginBottom: "1.25rem" }}>Image Upload</h3>
                 <form onSubmit={handleIngestSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                  <input 
-                    type="file" 
-                    id="admin-ingest-upload" 
-                    accept="image/*"
-                    style={{ display: "none" }}
-                    onChange={handleIngestFileChange}
-                  />
-                  
+
+                  {/* SKU input */}
+                  <div>
+                    <label style={{ fontSize: "0.8rem", color: "var(--text-secondary)", display: "block", marginBottom: "6px" }}>Product SKU <span style={{ color: "var(--text-muted)" }}>(leave blank to auto-generate)</span></label>
+                    <input
+                      type="text"
+                      value={ingestSku}
+                      onChange={e => setIngestSku(e.target.value)}
+                      placeholder="e.g. SKU-2024-001"
+                      style={{ width: "100%", padding: "0.6rem 0.85rem", background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-color)", borderRadius: "var(--radius-md)", color: "var(--text-primary)", fontSize: "0.9rem" }}
+                    />
+                  </div>
+
+                  {/* Primary image picker */}
+                  <input type="file" id="admin-ingest-upload" accept="image/*" style={{ display: "none" }} onChange={handleIngestFileChange} />
                   {ingestPreview ? (
-                    <div style={{ position: "relative", width: "100%", aspectRatio: 1, background: "#181922", borderRadius: "var(--radius-md)", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <img src={ingestPreview} alt="Ingest Preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      <button 
-                        type="button" 
-                        className="remove-img-btn" 
-                        style={{ position: "absolute", top: "10px", right: "10px" }}
-                        onClick={() => { setIngestFile(null); setIngestPreview(null); }}
-                      >
+                    <div style={{ position: "relative", width: "100%", aspectRatio: 1, background: "#181922", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
+                      <img src={ingestPreview} alt="Primary" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <button type="button" className="remove-img-btn" style={{ position: "absolute", top: "10px", right: "10px" }}
+                        onClick={() => { setIngestFile(null); setIngestPreview(null); setExtraImages([]); setExtraPreviews([]); setIngestResult(null); setEditableMeta(null); setMongoId(null); setSaveStatus(""); }}>
                         Remove
                       </button>
                     </div>
                   ) : (
                     <label htmlFor="admin-ingest-upload" className="ingest-upload-card">
                       <Upload className="upload-icon" />
-                      <span style={{ fontWeight: 600 }}>Click to select catalog image</span>
+                      <span style={{ fontWeight: 600 }}>Click to select primary catalogue image</span>
                       <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "0.5rem" }}>PNG, JPG, WEBP formats</span>
                     </label>
                   )}
 
-                  <button 
-                    className="search-btn" 
-                    type="submit" 
-                    disabled={ingestLoading || !ingestFile}
-                    style={{ justifyContent: "center", width: "100%", padding: "0.85rem" }}
-                  >
+                  {/* Extra images (shown only after primary is chosen) */}
+                  {ingestFile && (
+                    <div>
+                      <label style={{ fontSize: "0.8rem", color: "var(--text-secondary)", display: "block", marginBottom: "6px" }}>
+                        Additional Catalogue Images <span style={{ color: "var(--text-muted)" }}>(optional — all saved under image_paths)</span>
+                      </label>
+                      <input type="file" id="admin-extra-upload" accept="image/*" multiple style={{ display: "none" }}
+                        onChange={e => {
+                          const files = Array.from(e.target.files);
+                          setExtraImages(prev => [...prev, ...files]);
+                          setExtraPreviews(prev => [...prev, ...files.map(f => URL.createObjectURL(f))]);
+                        }}
+                      />
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "8px" }}>
+                        {extraPreviews.map((url, i) => (
+                          <div key={i} style={{ position: "relative", width: "64px", height: "64px", borderRadius: "var(--radius-sm)", overflow: "hidden" }}>
+                            <img src={url} alt={`extra-${i}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            <button type="button" onClick={() => {
+                              setExtraImages(prev => prev.filter((_, idx) => idx !== i));
+                              setExtraPreviews(prev => prev.filter((_, idx) => idx !== i));
+                            }} style={{ position: "absolute", top: 2, right: 2, background: "rgba(0,0,0,0.7)", color: "#fff", border: "none", borderRadius: "50%", width: "18px", height: "18px", cursor: "pointer", fontSize: "10px", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+                          </div>
+                        ))}
+                        <label htmlFor="admin-extra-upload" style={{ width: "64px", height: "64px", border: "1px dashed var(--border-color)", borderRadius: "var(--radius-sm)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "var(--text-muted)", fontSize: "1.5rem" }}>+</label>
+                      </div>
+                    </div>
+                  )}
+
+                  <button className="search-btn" type="submit" disabled={ingestLoading || !ingestFile} style={{ justifyContent: "center", width: "100%", padding: "0.85rem" }}>
                     {ingestLoading ? (
-                      <>
-                        <RefreshCw className="loading-spinner" size={16} style={{ animation: "spin 1s infinite linear" }} />
-                        <span>Running VLM Inference...</span>
-                      </>
+                      <><RefreshCw size={16} style={{ animation: "spin 1s infinite linear" }} /><span>Running VLM Inference…</span></>
                     ) : (
-                      <>
-                        <Sparkles size={16} />
-                        <span>Trigger VLM Analysis</span>
-                      </>
+                      <><Sparkles size={16} /><span>Trigger VLM Analysis</span></>
                     )}
                   </button>
                 </form>
               </div>
 
+              {/* ── Right panel: editable extraction results ── */}
               <div className="glass-panel" style={{ padding: "2rem" }}>
                 <h3 style={{ marginBottom: "1rem" }}>Extraction Results</h3>
-                
+
                 {ingestError && (
-                  <div style={{ display: "flex", gap: "0.5rem", color: "var(--error)", padding: "1rem", background: "rgba(239, 68, 68, 0.05)", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: "var(--radius-md)" }}>
-                    <AlertCircle size={18} />
-                    <span>{ingestError}</span>
+                  <div style={{ display: "flex", gap: "0.5rem", color: "var(--error)", padding: "1rem", background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: "var(--radius-md)" }}>
+                    <AlertCircle size={18} /><span>{ingestError}</span>
                   </div>
                 )}
 
-                {ingestResult ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+                {editableMeta ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--success)" }}>
-                      <CheckCircle size={20} />
-                      <span style={{ fontWeight: 700 }}>VLM Extraction Succeeded</span>
+                      <CheckCircle size={20} /><span style={{ fontWeight: 700 }}>VLM Extraction Succeeded — edit fields below if needed</span>
                     </div>
 
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                      <div className="detail-row">
-                        <span className="detail-label">Product Type</span>
-                        <span className="detail-value">{ingestResult.metadata?.product_type || "N/A"}</span>
+                    {/* Editable fields */}
+                    {[
+                      ["product_type", "Product Type"],
+                      ["brand", "Brand"],
+                      ["primary_color", "Primary Color"],
+                      ["pattern", "Pattern"],
+                      ["fit", "Fit"],
+                      ["material_composition", "Material Composition"],
+                      ["price", "Price"],
+                    ].map(([key, label]) => (
+                      <div key={key} className="detail-row" style={{ alignItems: "center" }}>
+                        <span className="detail-label" style={{ minWidth: "140px" }}>{label}</span>
+                        <input
+                          type={key === "price" ? "number" : "text"}
+                          value={editableMeta[key] ?? ""}
+                          onChange={e => setEditableMeta(prev => ({ ...prev, [key]: key === "price" ? parseFloat(e.target.value) : e.target.value }))}
+                          style={{ flex: 1, padding: "0.4rem 0.65rem", background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-color)", borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontSize: "0.875rem" }}
+                        />
                       </div>
-                      <div className="detail-row">
-                        <span className="detail-label">Main Category</span>
-                        <span className="detail-value">{ingestResult.metadata?.main_category || "N/A"}</span>
-                      </div>
-                      <div className="detail-row">
-                        <span className="detail-label">Subcategory</span>
-                        <span className="detail-value">{ingestResult.metadata?.subcategory || "N/A"}</span>
-                      </div>
-                      <div className="detail-row">
-                        <span className="detail-label">Brand</span>
-                        <span className="detail-value">{ingestResult.metadata?.brand || "Unknown"}</span>
-                      </div>
-                      <div className="detail-row">
-                        <span className="detail-label">Primary Color</span>
-                        <span className="detail-value">{ingestResult.metadata?.primary_color || "N/A"}</span>
-                      </div>
-                      <div className="detail-row">
-                        <span className="detail-label">Pattern</span>
-                        <span className="detail-value">{ingestResult.metadata?.pattern || "N/A"}</span>
-                      </div>
-                      <div className="detail-row">
-                        <span className="detail-label">Fit</span>
-                        <span className="detail-value">{ingestResult.metadata?.fit || "N/A"}</span>
-                      </div>
-                    </div>
+                    ))}
 
-                    {ingestResult.gt && (
-                      <div style={{ marginTop: "1rem", borderTop: "1px dashed var(--border-color)", paddingTop: "1rem" }}>
-                        <h4 style={{ marginBottom: "0.75rem", fontSize: "0.95rem" }}>Ground Truth Comparison</h4>
-                        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                          {Object.entries(ingestResult.gt).map(([key, comp]) => (
-                            <div key={key} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.85rem", background: "rgba(255,255,255,0.02)", padding: "0.5rem", borderRadius: "var(--radius-sm)" }}>
-                              <span style={{ textTransform: "capitalize" }}>{key}</span>
-                              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                                <span style={{ color: "var(--text-secondary)" }}>GT: {comp.gt}</span>
-                                <span style={{ color: comp.match ? "var(--success)" : "var(--error)" }}>
-                                  VLM: {comp.vlm} ({comp.match ? "MATCH" : "MISMATCH"})
-                                </span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                    {/* Confirm & Save */}
+                    <button
+                      className="search-btn"
+                      onClick={handleConfirmSave}
+                      disabled={saveStatus === "saving"}
+                      style={{ justifyContent: "center", width: "100%", padding: "0.85rem", marginTop: "0.5rem",
+                        background: saveStatus === "saved" ? "rgba(16,185,129,0.2)" : saveStatus === "error" ? "rgba(239,68,68,0.2)" : undefined }}
+                    >
+                      {saveStatus === "saving" && <><RefreshCw size={16} style={{ animation: "spin 1s infinite linear" }} /><span>Saving…</span></>}
+                      {saveStatus === "saved" && <><CheckCircle size={16} /><span>Saved to MongoDB & ChromaDB</span></>}
+                      {saveStatus === "error" && <><AlertCircle size={16} /><span>Save failed — try again</span></>}
+                      {!saveStatus && <><CheckCircle size={16} /><span>Confirm &amp; Save</span></>}
+                    </button>
                   </div>
                 ) : (
                   <div className="empty-state" style={{ padding: "2rem 0" }}>
                     <Sparkles className="empty-icon" />
-                    <p>Trigger analysis to view extracted product features and metadata validation results.</p>
+                    <p>Trigger analysis to view and edit extracted product metadata before saving.</p>
                   </div>
                 )}
               </div>
@@ -583,6 +719,7 @@ export default function App() {
           </div>
         )}
       </main>
+
 
       {/* Cart Drawer */}
       {isCartOpen && (
@@ -602,7 +739,7 @@ export default function App() {
               cart.map((item) => (
                 <div key={item.sku} style={{ display: "flex", gap: "1rem", background: "var(--bg-tertiary)", padding: "0.75rem", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)" }}>
                   <img 
-                    src={item.image_path || "/data/products/placeholder.jpg"} 
+                    src={item.image_paths?.[0] || item.image_path || "/products/placeholder.jpg"} 
                     alt={item.product_type} 
                     style={{ width: "60px", height: "60px", objectFit: "cover", borderRadius: "var(--radius-sm)", background: "#181922" }}
                     onError={(e) => {
