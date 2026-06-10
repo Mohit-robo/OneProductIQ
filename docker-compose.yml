@@ -98,6 +98,8 @@ services:
       - ./scripts:/scripts
       # Mount product image data into the container for the ingestion script (read-only)
       - ./data/products:/data/products:ro
+      # Mount eval dataset
+      - ./data/eval_dataset:/data/eval_dataset:ro
       # Writable mount so /upload endpoint can save images for browser access
       - ./data/products/uploads:/data/products/uploads
     healthcheck:

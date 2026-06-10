@@ -108,3 +108,16 @@ This document tracks the step-by-step execution of the GenAI E-Commerce Platform
 #### Pending
 - [ ] RAG relevance tuning: "1 Products found" counter mismatch + loosely relevant recommendations
 - [ ] **Zip batch ingestion (future):** Allow admin to upload a `.zip` of product folders (images + `metadata.csv`). Backend unzips and calls `ingest_products.py` per entry. Note: `ingest_products.py` script already assumes `metadata.csv` is present — no manual file-check needed in admin UI.
+
+---
+
+### Phase 9: Evaluation Pipeline
+**Goal:** Establish a robust framework to quantitatively measure VLM extraction, RAG retrieval, and Agent response quality against ground truth (`styles.csv`).
+
+- [x] Create evaluation plan based on Confident AI guidelines (VLM, RAG, LLM, Agent metrics).
+- [x] Create initial VLM evaluation script (`vlm_eval.py`) mapping dataset images to `styles.csv`.
+- [x] Implement LLM-as-a-judge (Gemini) for semantic matching of VLM outputs against ground truth.
+- [ ] Implement DeepEval test suite for RAG metrics (Contextual Precision, Recall, Relevancy).
+- [ ] Implement DeepEval test suite for Agent/LLM metrics (Faithfulness, Answer Relevancy, Tool Correctness).
+- [ ] Run full evaluation across the 750+ product catalog and establish baseline scores.
+- [ ] Tune ChromaDB retrieval parameters and Agent prompts based on evaluation results.

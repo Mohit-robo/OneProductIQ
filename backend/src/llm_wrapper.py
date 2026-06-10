@@ -17,6 +17,7 @@ os.environ["GOOGLE_API_KEY"] = os.getenv("GEMINI_API_KEY", os.getenv("GOOGLE_API
 
 # Using gemini-2.5-flash via init_chat_model
 llm = init_chat_model(settings.gemini_model_name)
+
 structured_llm = llm.with_structured_output(ProductMetadata)
 
 def parse_metadata_csv(csv_content: str) -> ProductMetadata:
